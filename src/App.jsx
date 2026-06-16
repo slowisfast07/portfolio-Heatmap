@@ -37,6 +37,23 @@ const SECTOR_COLORS = {
   Cash: "#8b98a6", Other: "#cbd5e1",
 };
 
+/* presets shown in the sector autocomplete (you can also type your own) */
+const SECTOR_PRESETS = [
+  "Technology", "Communication", "Consumer Cyclical", "Consumer Defensive", "Financial",
+  "Healthcare", "Industrials", "Energy", "Real Estate", "Basic Materials", "Utilities", "Crypto", "Other",
+  "AI 반도체", "메모리/반도체", "반도체 파운드리", "AI 데이터센터", "네오클라우드", "양자컴퓨팅", "성장주", "배당주",
+];
+
+/* curated starter theme tags for well-known tickers — fully editable in the table */
+const THEME_MAP = {
+  "IREN": "AI 데이터센터", "NBIS": "네오클라우드", "MU": "메모리/반도체", "000660.KS": "메모리/반도체",
+  "005930.KS": "메모리/반도체", "INFQ": "양자컴퓨팅", "MRVL": "AI 반도체", "NVDA": "AI 반도체",
+  "AVGO": "AI 반도체", "AMD": "AI 반도체", "TSM": "반도체 파운드리",
+};
+
+const hashHue = (s) => { let h = 0; for (let i = 0; i < (s || "").length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
+const sectorColor = (sector) => SECTOR_COLORS[sector] || `hsl(${hashHue(sector)},58%,60%)`;
+
 const YH_SECTOR = {
   "Technology": "Technology", "Communication Services": "Communication",
   "Consumer Cyclical": "Consumer Cyclical", "Consumer Defensive": "Consumer Defensive",
@@ -131,18 +148,21 @@ async function fetchStocks(symbols) {
   }));
   return out;
 }
-async function lookupTicker(symbol) {
+async function lookupTicker(query) {
   try {
-    const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(symbol)}`);
-    if (r.ok) { const j = await r.json(); if (j && j[symbol]) return j[symbol]; }
+    const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(query)}`);
+    if (r.ok) { const j = await r.json(); if (j && j[query]) return j[query]; }
   } catch { /* fall through */ }
   try {
-    const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(symbol)}&quotesCount=4&newsCount=0`;
+    const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=6&newsCount=0`;
     const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`);
     const j = await r.json();
-    const quotes = j?.quotes || [];
-    const q = quotes.find((x) => (x.symbol || "").toUpperCase() === symbol.toUpperCase()) || quotes[0];
-    if (q) return { name: q.longname || q.shortname || null, sector: q.sector || null };
+    const quotes = (j?.quotes || []).filter((x) => x.symbol);
+    const hangul = /[\uAC00-\uD7A3]/.test(query);
+    const q = (hangul
+      ? quotes.find((x) => /\.(KS|KQ)$/i.test(x.symbol))
+      : quotes.find((x) => x.symbol.toUpperCase() === query.toUpperCase())) || quotes[0];
+    if (q) return { symbol: q.symbol, name: q.longname || q.shortname || null, sector: q.sector || null };
   } catch { /* skip */ }
   return null;
 }
@@ -273,11 +293,29 @@ export default function App() {
   const updateCash = (id, patch) => setCash((p) => p.map((c) => (c.id === id ? { ...c, ...patch } : c)));
   const removeCash = (id) => setCash((p) => p.filter((c) => c.id !== id));
 
-  const autoFill = useCallback(async (id, ticker, type) => {
-    if (!ticker) return;
-    if (type === "crypto") { const sym = ticker.toUpperCase(); updateHolding(id, { name: CRYPTO_NAMES[sym] || sym, sector: "Crypto" }); return; }
-    const info = await lookupTicker(ticker);
-    if (info) { const patch = {}; if (info.name) patch.name = info.name; if (info.sector) patch.sector = mapSector(info.sector); if (Object.keys(patch).length) updateHolding(id, patch); }
+  const autoFill = useCallback(async (id, raw, type) => {
+    if (!raw) return;
+    if (type === "crypto") {
+      const sym = raw.toUpperCase();
+      updateHolding(id, { name: CRYPTO_NAMES[sym] || sym, sector: "Crypto" });
+      const cd = await fetchCrypto([sym]);
+      if (cd[sym]) updateHolding(id, { price: cd[sym].price, chg: cd[sym].chg, cur: "USD", live: true });
+      return;
+    }
+    const info = await lookupTicker(raw);
+    let sym = raw.toUpperCase();
+    if (info) {
+      const patch = {};
+      if (info.symbol) { sym = info.symbol.toUpperCase(); patch.ticker = sym; }
+      if (info.name) patch.name = info.name;
+      const theme = THEME_MAP[sym] || (info.sector ? mapSector(info.sector) : null);
+      if (theme) patch.sector = theme;
+      updateHolding(id, patch);
+    } else if (THEME_MAP[sym]) {
+      updateHolding(id, { sector: THEME_MAP[sym] });
+    }
+    const sd = await fetchStocks([sym]);
+    if (sd[sym]) updateHolding(id, { price: sd[sym].price, chg: sd[sym].chg, ...(sd[sym].cur ? { cur: sd[sym].cur } : {}), live: true });
   }, []);
 
   const capNow = heatMode === "return" ? capReturn : capChange;
@@ -457,10 +495,13 @@ function Treemap({ leaves, th, cap, showPct, labelMode }) {
         const dark = d3.hcl(color).l < 60;
         const tc = dark ? "#fff" : "#0b1015";
         const label = labelMode === "name" && leaf.data.name ? leaf.data.name : (leaf.data.ticker || "").replace(".KS", "").replace(".KQ", "");
+        const tk = leaf.data.ticker || "";
+        const isKR = /\.(KS|KQ)$/i.test(tk) || /^\d{6}$/.test(tk);
+        const finalLabel = ((labelMode === "name" || isKR) && leaf.data.name) ? leaf.data.name : (tk.replace(".KS", "").replace(".KQ", "") || label);
         return (
           <div key={leaf.data.id} title={`${leaf.data.name || leaf.data.ticker}  ${leaf.data.metric != null ? (leaf.data.metric >= 0 ? "+" : "") + fmt(leaf.data.metric) + "%" : ""}`}
             style={{ position: "absolute", left: leaf.x0, top: leaf.y0, width: bw, height: bh, background: color, borderRadius: 3, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", color: tc, padding: 2 }}>
-            {showLabel && <div style={{ fontWeight: 700, fontSize: fs, lineHeight: 1.05, textAlign: "center", padding: "0 3px", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", whiteSpace: "nowrap" }}>{label}</div>}
+            {showLabel && <div style={{ fontWeight: 700, fontSize: fs, lineHeight: 1.05, textAlign: "center", padding: "0 3px", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", whiteSpace: "nowrap" }}>{finalLabel}</div>}
             {showPctHere && <div className="num" style={{ fontSize: Math.max(8, fs * 0.6), opacity: 0.95 }}>{leaf.data.metric >= 0 ? "+" : ""}{fmt(leaf.data.metric)}%</div>}
           </div>
         );
@@ -495,13 +536,13 @@ function Donut({ data, th }) {
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie data={data} dataKey="value" nameKey="sector" cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} stroke="none" startAngle={90} endAngle={-270}>
-              {data.map((d) => <Cell key={d.sector} fill={SECTOR_COLORS[d.sector] || "#888"} />)}
+              {data.map((d) => <Cell key={d.sector} fill={sectorColor(d.sector)} />)}
             </Pie>
           </PieChart>
         </ResponsiveContainer>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
           <div style={{ textAlign: "center" }}>
-            <div className="num" style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: SECTOR_COLORS[top.sector] }}>{fmt(top.pct, 1)}%</div>
+            <div className="num" style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: sectorColor(top.sector) }}>{fmt(top.pct, 1)}%</div>
             <div style={{ fontSize: 11, color: th.textDim, maxWidth: 90, lineHeight: 1.2 }}>{top.sector}</div>
           </div>
         </div>
@@ -509,7 +550,7 @@ function Donut({ data, th }) {
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
         {data.map((d) => (
           <div key={d.sector} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5 }}>
-            <Dot c={SECTOR_COLORS[d.sector] || "#888"} /><span style={{ flex: 1, color: th.text }}>{d.sector}</span>
+            <Dot c={sectorColor(d.sector)} /><span style={{ flex: 1, color: th.text }}>{d.sector}</span>
             <span className="num" style={{ color: th.textDim, fontWeight: 600 }}>{fmt(d.pct, 1)}%</span>
           </div>
         ))}
@@ -526,6 +567,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
   const cell = { padding: "6px 8px", fontSize: 12.5, borderTop: `1px solid ${th.border}` };
   return (
     <div style={{ overflowX: "auto" }}>
+      <datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist>
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920 }}>
         <thead><tr>
           <th style={head()}>유형</th><th style={head()}>티커</th><th style={head()}>이름</th><th style={head()}>섹터</th>
@@ -540,7 +582,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                 <td style={cell}><select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 62)}><option value="us">미국</option><option value="kr">한국</option><option value="crypto">크립토</option></select></td>
                 <td style={cell}><input value={h.ticker} placeholder={h.type === "kr" ? "005930.KS" : h.type === "crypto" ? "BTC" : "AAPL"} onChange={(e) => onUpdate(h.id, { ticker: e.target.value.toUpperCase(), live: false })} onBlur={(e) => onAutoFill(h.id, e.target.value.toUpperCase(), h.type)} onKeyDown={(e) => { if (e.key === "Enter") onAutoFill(h.id, e.target.value.toUpperCase(), h.type); }} style={inpStyle(th, 92)} className="num" /></td>
                 <td style={cell}><input value={h.name} placeholder="자동" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={inpStyle(th, 120)} /></td>
-                <td style={cell}><select value={h.sector} onChange={(e) => onUpdate(h.id, { sector: e.target.value })} style={selStyle(th, 128)}>{SECTORS.filter((s) => s !== "Cash").map((s) => <option key={s} value={s}>{s}</option>)}</select></td>
+                <td style={cell}><input list="ph-sectors" value={h.sector} placeholder="섹터/테마" onChange={(e) => onUpdate(h.id, { sector: e.target.value })} style={inpStyle(th, 132)} /></td>
                 <td style={{ ...cell, textAlign: "right" }}><input type="number" value={h.qty} onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 66), textAlign: "right" }} className="num" /></td>
                 <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 76), textAlign: "right" }} className="num" /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>
                 <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 84), textAlign: "right", color: h.live ? th.accent : th.text }} className="num" title={h.live ? "야후 실시간" : "직접 입력 가능"} /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>

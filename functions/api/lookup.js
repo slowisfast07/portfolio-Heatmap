@@ -25,8 +25,11 @@ export async function onRequest(context) {
         const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0" } });
         const j = await r.json();
         const quotes = j?.quotes || [];
-        const q = quotes.find((x) => (x.symbol || "").toUpperCase() === sym.toUpperCase()) || quotes[0];
-        if (q) out[sym] = { name: q.longname || q.shortname || null, sector: q.sector || null };
+        const hangul = /[\uAC00-\uD7A3]/.test(sym);
+        const q = (hangul
+          ? quotes.find((x) => /\.(KS|KQ)$/i.test(x.symbol || ""))
+          : quotes.find((x) => (x.symbol || "").toUpperCase() === sym.toUpperCase())) || quotes[0];
+        if (q) out[sym] = { symbol: q.symbol || null, name: q.longname || q.shortname || null, sector: q.sector || null };
       } catch {
         /* skip */
       }
