@@ -10,18 +10,24 @@ import {
  * ------------------------------------------------------------------ */
 const THEMES = {
   dark: {
-    name: "dark", bg: "#15191d", panel: "#1c2127", panelAlt: "#262d35", border: "#2c333c",
-    text: "#eef1f4", textDim: "#9aa3ad", textFaint: "#69727d", accent: "#2d9cdb",
-    inputBg: "#171b20", heatPos: "#27ae60", heatNeg: "#e5484d", heatNeu: "#2c333c",
-    rowHover: "#222831", band: "#171b20",
-    posBg: "rgba(39,174,96,.16)", negBg: "rgba(229,72,77,.16)",
+    name: "dark", bg: "#0f1318", panel: "#181d24", panelAlt: "#222933", border: "#272e38",
+    borderHover: "#3a4350", text: "#eef1f4", textDim: "#9aa3ad", textFaint: "#69727d",
+    accent: "#2d9cdb", accentGlow: "rgba(45,156,219,.38)",
+    inputBg: "#12161c", heatPos: "#21a85a", heatNeg: "#e5484d", heatNeu: "#2b323c",
+    rowHover: "#232a34", band: "#13171d",
+    posBg: "rgba(33,168,90,.16)", negBg: "rgba(229,72,77,.16)",
+    cardShadow: "0 8px 28px rgba(0,0,0,.38)",
+    heroGlow: "linear-gradient(180deg, rgba(155,93,229,.12), rgba(45,212,191,.05) 42%, transparent 78%)",
   },
   light: {
-    name: "light", bg: "#f5f7f9", panel: "#ffffff", panelAlt: "#eef1f5", border: "#e2e6ec",
-    text: "#15191d", textDim: "#5b646d", textFaint: "#97a0aa", accent: "#1d83c6",
+    name: "light", bg: "#f4f6f9", panel: "#ffffff", panelAlt: "#eef1f5", border: "#e2e6ec",
+    borderHover: "#cdd5df", text: "#15191d", textDim: "#5b646d", textFaint: "#97a0aa",
+    accent: "#1d83c6", accentGlow: "rgba(29,131,198,.28)",
     inputBg: "#ffffff", heatPos: "#1c9d57", heatNeg: "#d83a40", heatNeu: "#dde2e8",
-    rowHover: "#f4f6f9", band: "#eef1f5",
+    rowHover: "#eef2f7", band: "#eef1f5",
     posBg: "rgba(28,157,87,.13)", negBg: "rgba(216,58,64,.12)",
+    cardShadow: "0 8px 24px rgba(15,25,40,.10)",
+    heroGlow: "linear-gradient(180deg, rgba(155,93,229,.08), rgba(45,156,219,.05) 42%, transparent 78%)",
   },
 };
 
@@ -75,15 +81,9 @@ const CRYPTO_NAMES = {
 };
 
 const SEED = [
-  { id: "s1", type: "us", ticker: "AAPL", name: "Apple Inc.", sector: "Technology", qty: 30, avgCost: 175, price: null, cur: "USD", chg: null, live: false },
-  { id: "s2", type: "us", ticker: "NVDA", name: "NVIDIA Corp.", sector: "Technology", qty: 25, avgCost: 90, price: null, cur: "USD", chg: null, live: false },
-  { id: "s3", type: "us", ticker: "MSFT", name: "Microsoft Corp.", sector: "Technology", qty: 12, avgCost: 360, price: null, cur: "USD", chg: null, live: false },
-  { id: "s4", type: "us", ticker: "GOOG", name: "Alphabet Inc.", sector: "Communication", qty: 15, avgCost: 140, price: null, cur: "USD", chg: null, live: false },
-  { id: "s5", type: "kr", ticker: "005930.KS", name: "삼성전자", sector: "Technology", qty: 100, avgCost: 68000, price: null, cur: "KRW", chg: null, live: false },
-  { id: "s6", type: "crypto", ticker: "BTC", name: "Bitcoin", sector: "Crypto", qty: 0.5, avgCost: 55000, price: null, cur: "USD", chg: null, live: false },
-  { id: "s7", type: "crypto", ticker: "ETH", name: "Ethereum", sector: "Crypto", qty: 4, avgCost: 2800, price: null, cur: "USD", chg: null, live: false },
+  { id: "s1", type: "us", ticker: "", name: "", sector: "", qty: 0, avgCost: null, price: null, cur: "USD", chg: null, live: false },
 ];
-const SEED_CASH = [{ id: "c1", label: "원화 예수금", cur: "KRW", amount: 5000000 }];
+const SEED_CASH = [];
 
 const uid = () => Math.random().toString(36).slice(2, 9);
 const fmt = (n, d = 2) =>
@@ -135,19 +135,36 @@ async function fetchStocks(symbols) {
   const out = {};
   await Promise.all(symbols.map(async (sym) => {
     try {
-      const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=1d`;
+      const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
       const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(y)}`);
       const j = await r.json();
-      const meta = j?.chart?.result?.[0]?.meta;
+      const result = j?.chart?.result?.[0];
+      const meta = result?.meta;
       if (meta?.regularMarketPrice != null) {
-        const prev = meta.chartPreviousClose ?? meta.previousClose;
-        const price = meta.regularMarketPrice;
-        out[sym] = { price, chg: prev ? ((price - prev) / prev) * 100 : null, cur: meta.currency || null };
+        const regular = meta.regularMarketPrice;
+        const prev = meta.chartPreviousClose ?? meta.previousClose ?? regular;
+        const closes = result?.indicators?.quote?.[0]?.close || [];
+        let latest = null;
+        for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
+        const price = latest != null ? latest : regular;
+        const state = meta.marketState || "";
+        const mkt = state.startsWith("PRE") ? "프리장" : state.startsWith("POST") ? "애프터장" : state === "REGULAR" ? "정규장" : "장마감";
+        out[sym] = { price, chg: prev ? ((price - prev) / prev) * 100 : null, cur: meta.currency || null, mkt };
       }
     } catch { /* skip */ }
   }));
   return out;
 }
+/* AI theme classification — deploy build calls the /api/classify backend.
+   (Backend needs env ANTHROPIC_API_KEY; without it returns null and we fall back.) */
+async function classifyTicker(symbol, name) {
+  try {
+    const r = await fetch(`/api/classify?symbol=${encodeURIComponent(symbol)}&name=${encodeURIComponent(name || "")}`);
+    if (r.ok) { const j = await r.json(); if (j && j.theme) return j.theme; }
+  } catch { /* none */ }
+  return null;
+}
+
 async function lookupTicker(query) {
   try {
     const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(query)}`);
@@ -231,7 +248,7 @@ export default function App() {
     const [cryptoData, stockData] = await Promise.all([fetchCrypto(cryptoSyms), fetchStocks(stockSyms)]);
     setHoldings((prev) => prev.map((h) => {
       if (h.type === "crypto") { const d = cryptoData[h.ticker.toUpperCase()]; return d ? { ...h, price: d.price, chg: d.chg, cur: "USD", live: true } : h; }
-      const d = stockData[h.ticker]; return d ? { ...h, price: d.price, chg: d.chg, cur: d.cur || h.cur, live: true } : h;
+      const d = stockData[h.ticker]; return d ? { ...h, price: d.price, chg: d.chg, cur: d.cur || h.cur, mkt: d.mkt, live: true } : h;
     }));
     setLastUpdate(new Date());
     setLoading(false);
@@ -304,10 +321,11 @@ export default function App() {
     }
     const info = await lookupTicker(raw);
     let sym = raw.toUpperCase();
+    let nm = null;
     if (info) {
       const patch = {};
       if (info.symbol) { sym = info.symbol.toUpperCase(); patch.ticker = sym; }
-      if (info.name) patch.name = info.name;
+      if (info.name) { patch.name = info.name; nm = info.name; }
       const theme = THEME_MAP[sym] || (info.sector ? mapSector(info.sector) : null);
       if (theme) patch.sector = theme;
       updateHolding(id, patch);
@@ -315,7 +333,12 @@ export default function App() {
       updateHolding(id, { sector: THEME_MAP[sym] });
     }
     const sd = await fetchStocks([sym]);
-    if (sd[sym]) updateHolding(id, { price: sd[sym].price, chg: sd[sym].chg, ...(sd[sym].cur ? { cur: sd[sym].cur } : {}), live: true });
+    if (sd[sym]) updateHolding(id, { price: sd[sym].price, chg: sd[sym].chg, mkt: sd[sym].mkt, ...(sd[sym].cur ? { cur: sd[sym].cur } : {}), live: true });
+    /* AI refines the theme when it isn't one of the curated tickers */
+    if (!THEME_MAP[sym]) {
+      const theme = await classifyTicker(sym, nm);
+      if (theme) updateHolding(id, { sector: theme });
+    }
   }, []);
 
   const capNow = heatMode === "return" ? capReturn : capChange;
@@ -325,8 +348,14 @@ export default function App() {
       <style>{`
         .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
         input,select{outline:none;font-family:inherit;} input:focus,select:focus{border-color:${th.accent}!important;}
-        .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.08);}
-        .ph-row:hover{background:${th.rowHover};}
+        .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
+        .ph-primary:hover{box-shadow:0 4px 16px ${th.accentGlow};}
+        .ph-card{transition:box-shadow .2s, border-color .2s, transform .2s;}
+        .ph-card:hover{border-color:${th.borderHover};box-shadow:${th.cardShadow};}
+        .ph-row{transition:background .12s;} .ph-row:hover{background:${th.rowHover};}
+        .ph-tile{transition:filter .14s, box-shadow .14s;cursor:default;}
+        .ph-tile:hover{filter:brightness(1.14);box-shadow:inset 0 0 0 2px rgba(255,255,255,.6);z-index:6;}
+        .ph-legend{transition:background .12s;border-radius:7px;} .ph-legend:hover{background:${th.rowHover};}
         ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:${th.border};border-radius:4px;}
         @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
         input[type=range]{accent-color:${th.accent};}
@@ -336,7 +365,7 @@ export default function App() {
       {/* HEADER */}
       <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "16px 22px", borderBottom: `1px solid ${th.border}`, background: th.bg, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: th.accent, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 17, color: "#fff" }}>P</div>
+          <div style={{ width: 32, height: 32, borderRadius: 9, background: "linear-gradient(135deg,#2d9cdb,#9b5de5)", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 17, color: "#fff", boxShadow: "0 2px 10px rgba(45,156,219,.4)" }}>P</div>
           <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>Portfolio</div>
         </div>
         <div style={{ flex: 1 }} />
@@ -364,7 +393,7 @@ export default function App() {
 
       {/* BODY */}
       <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 340px", gap: 16, padding: 18, alignItems: "start" }} className="ph-grid">
-        <Panel th={th} title="Heatmap"
+        <Panel th={th} title="Heatmap" glow
           titleExtra={<Segmented th={th} value={heatMode} onChange={setHeatMode} options={[["change", "현재가"], ["return", "내 수익률"]]} />}
           right={<HeatControls th={th} mode={heatMode} cap={capNow} setCap={heatMode === "return" ? setCapReturn : setCapChange} showPct={showPct} setShowPct={setShowPct} labelMode={labelMode} setLabelMode={setLabelMode} />}>
           <Treemap leaves={leaves} th={th} cap={capNow} showPct={showPct} labelMode={labelMode} />
@@ -383,7 +412,7 @@ export default function App() {
       {/* TABLE */}
       <div style={{ padding: "0 18px 36px" }}>
         <Panel th={th} title="내 포트폴리오" sub="티커만 넣으면 이름·섹터 자동 분류"
-          right={<button className="ph-btn" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>}>
+          right={<button className="ph-btn ph-primary" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>}>
           <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} />
           <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
             티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터 자동</b> 입력. 한국주식 <b style={{ color: th.textDim }}>005930.KS</b>(코스닥 .KQ), 크립토 <b style={{ color: th.textDim }}>BTC</b>.
@@ -403,7 +432,7 @@ function CashCard({ th, cash, displayCur, conv, cashValue, cashPct, investedValu
   return (
     <Panel th={th} title="현금 비중"
       titleExtra={<Wallet size={15} color={th.textDim} />}
-      right={<button className="ph-btn" onClick={onAdd} style={{ ...primaryBtn(th), padding: "6px 10px", fontSize: 12 }}><Plus size={14} /> 현금</button>}>
+      right={<button className="ph-btn ph-primary" onClick={onAdd} style={{ ...primaryBtn(th), padding: "6px 10px", fontSize: 12 }}><Plus size={14} /> 현금</button>}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
         <span className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: -0.6 }}>{fmt(cashPct, 1)}%</span>
         <span style={{ fontSize: 12, color: th.textDim }}>현금 / 총자산</span>
@@ -499,8 +528,8 @@ function Treemap({ leaves, th, cap, showPct, labelMode }) {
         const isKR = /\.(KS|KQ)$/i.test(tk) || /^\d{6}$/.test(tk);
         const finalLabel = ((labelMode === "name" || isKR) && leaf.data.name) ? leaf.data.name : (tk.replace(".KS", "").replace(".KQ", "") || label);
         return (
-          <div key={leaf.data.id} title={`${leaf.data.name || leaf.data.ticker}  ${leaf.data.metric != null ? (leaf.data.metric >= 0 ? "+" : "") + fmt(leaf.data.metric) + "%" : ""}`}
-            style={{ position: "absolute", left: leaf.x0, top: leaf.y0, width: bw, height: bh, background: color, borderRadius: 3, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", color: tc, padding: 2 }}>
+          <div key={leaf.data.id} className="ph-tile" title={`${leaf.data.name || leaf.data.ticker}  ${leaf.data.metric != null ? (leaf.data.metric >= 0 ? "+" : "") + fmt(leaf.data.metric) + "%" : ""}`}
+            style={{ position: "absolute", left: leaf.x0, top: leaf.y0, width: bw, height: bh, background: color, borderRadius: 4, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", color: tc, padding: 2 }}>
             {showLabel && <div style={{ fontWeight: 700, fontSize: fs, lineHeight: 1.05, textAlign: "center", padding: "0 3px", overflow: "hidden", textOverflow: "ellipsis", maxWidth: "100%", whiteSpace: "nowrap" }}>{finalLabel}</div>}
             {showPctHere && <div className="num" style={{ fontSize: Math.max(8, fs * 0.6), opacity: 0.95 }}>{leaf.data.metric >= 0 ? "+" : ""}{fmt(leaf.data.metric)}%</div>}
           </div>
@@ -549,7 +578,7 @@ function Donut({ data, th }) {
       </div>
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
         {data.map((d) => (
-          <div key={d.sector} style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5 }}>
+          <div key={d.sector} className="ph-legend" style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, padding: "3px 6px", margin: "0 -6px" }}>
             <Dot c={sectorColor(d.sector)} /><span style={{ flex: 1, color: th.text }}>{d.sector}</span>
             <span className="num" style={{ color: th.textDim, fontWeight: 600 }}>{fmt(d.pct, 1)}%</span>
           </div>
@@ -583,9 +612,17 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                 <td style={cell}><input value={h.ticker} placeholder={h.type === "kr" ? "005930.KS" : h.type === "crypto" ? "BTC" : "AAPL"} onChange={(e) => onUpdate(h.id, { ticker: e.target.value.toUpperCase(), live: false })} onBlur={(e) => onAutoFill(h.id, e.target.value.toUpperCase(), h.type)} onKeyDown={(e) => { if (e.key === "Enter") onAutoFill(h.id, e.target.value.toUpperCase(), h.type); }} style={inpStyle(th, 92)} className="num" /></td>
                 <td style={cell}><input value={h.name} placeholder="자동" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={inpStyle(th, 120)} /></td>
                 <td style={cell}><input list="ph-sectors" value={h.sector} placeholder="섹터/테마" onChange={(e) => onUpdate(h.id, { sector: e.target.value })} style={inpStyle(th, 132)} /></td>
-                <td style={{ ...cell, textAlign: "right" }}><input type="number" value={h.qty} onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 66), textAlign: "right" }} className="num" /></td>
+                <td style={{ ...cell, textAlign: "right" }}><input type="number" value={h.qty || ""} placeholder="0" onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 66), textAlign: "right" }} className="num" /></td>
                 <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 76), textAlign: "right" }} className="num" /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>
-                <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 84), textAlign: "right", color: h.live ? th.accent : th.text }} className="num" title={h.live ? "야후 실시간" : "직접 입력 가능"} /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>
+                <td style={{ ...cell, textAlign: "right" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
+                    <input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 84), textAlign: "right", color: h.live ? th.accent : th.text }} className="num" title={h.live ? "야후 실시간" : "직접 입력 가능"} />
+                    <span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span>
+                  </div>
+                  {h.live && h.mkt && h.mkt !== "정규장" && (
+                    <div style={{ fontSize: 9.5, marginTop: 2, textAlign: "right", color: h.mkt === "프리장" ? th.accent : h.mkt === "애프터장" ? "#f59e0b" : th.textFaint }}>{h.mkt}</div>
+                  )}
+                </td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg, fontWeight: 600 }}>{h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}`}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: ret == null ? th.textFaint : ret >= 0 ? th.heatPos : th.heatNeg, fontWeight: 700 }}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}`}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{fmtMoney(v, displayCur)}</td>
@@ -616,17 +653,18 @@ function DeltaPill({ th, label, v }) {
     </span>
   );
 }
-function Panel({ th, title, sub, titleExtra, right, children }) {
+function Panel({ th, title, sub, titleExtra, right, glow, children }) {
   return (
-    <div style={{ background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, padding: 18 }}>
-      <div style={{ display: "flex", alignItems: "center", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
+    <div className="ph-card" style={{ position: "relative", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 18, overflow: "hidden" }}>
+      {glow && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 90, background: th.heroGlow, pointerEvents: "none" }} />}
+      <div style={{ position: "relative", display: "flex", alignItems: "center", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <div><div style={{ fontSize: 14, fontWeight: 700, letterSpacing: -0.2 }}>{title}</div>{sub && <div style={{ fontSize: 11, color: th.textDim, marginTop: 1 }}>{sub}</div>}</div>
           {titleExtra}
         </div>
         <div style={{ flex: 1 }} />{right}
       </div>
-      {children}
+      <div style={{ position: "relative" }}>{children}</div>
     </div>
   );
 }
@@ -636,7 +674,7 @@ function Segmented({ th, value, onChange, options, small }) {
       {options.map(([val, label]) => {
         const on = value === val;
         return (
-          <button key={val} className="ph-btn" onClick={() => onChange(val)} style={{ border: "none", borderRadius: 999, padding: small ? "4px 10px" : "5px 13px", fontSize: small ? 11.5 : 12.5, fontWeight: 700, background: on ? th.accent : "transparent", color: on ? "#fff" : th.textDim, cursor: "pointer", transition: "all .15s" }}>{label}</button>
+          <button key={val} className="ph-btn" onClick={() => onChange(val)} style={{ border: "none", borderRadius: 999, padding: small ? "4px 10px" : "5px 13px", fontSize: small ? 11.5 : 12.5, fontWeight: 700, background: on ? th.accent : "transparent", color: on ? "#fff" : th.textDim, cursor: "pointer", transition: "all .15s", boxShadow: on ? "0 1px 6px rgba(0,0,0,.28)" : "none" }}>{label}</button>
         );
       })}
     </div>
