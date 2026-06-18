@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import * as d3 from "d3";
-import { PieChart, Pie, Cell, ResponsiveContainer } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from "recharts";
 import {
-  Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet,
+  Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
+  Image as ImageIcon, FileText,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ *
@@ -35,13 +36,57 @@ const SECTORS = [
   "Technology", "Communication", "Consumer Cyclical", "Consumer Defensive", "Financial",
   "Healthcare", "Industrials", "Energy", "Real Estate", "Basic Materials", "Utilities", "Crypto", "Cash", "Other",
 ];
-const SECTOR_COLORS = {
-  Technology: "#2d9cdb", Communication: "#a78bfa", "Consumer Cyclical": "#f59e0b",
-  "Consumer Defensive": "#34d399", Financial: "#60a5fa", Healthcare: "#f472b6",
-  Industrials: "#fb923c", Energy: "#facc15", "Real Estate": "#4ade80",
-  "Basic Materials": "#94a3b8", Utilities: "#818cf8", Crypto: "#fbbf24",
-  Cash: "#8b98a6", Other: "#cbd5e1",
+/* vivid, punchy categorical palette (assigned by sector order) */
+const PALETTE = ["#16c784", "#3b82f6", "#22c1e0", "#f5a623", "#e5484d", "#8b5cf6", "#ec4899", "#0fb9b1", "#fc6e51", "#5b7cfa", "#84cc16", "#fb7185", "#f7b500", "#06b6d4"];
+const CASH_COLOR = "#7c8794";
+const RESERVED_COLORS = { Cash: CASH_COLOR, Crypto: "#f7b500" };
+/* build a stable, distinct color per sector from the (value-sorted) list */
+function buildColorMap(sectors) {
+  const m = {}; let p = 0;
+  sectors.forEach((s) => { m[s] = RESERVED_COLORS[s] || PALETTE[p++ % PALETTE.length]; });
+  return m;
+}
+
+/* theme -> representative tickers, used to generate recommendations */
+const THEME_CATALOG = {
+  "AI 반도체": ["NVDA", "AVGO", "AMD", "MRVL", "TSM", "ARM"],
+  "메모리/반도체": ["MU", "000660.KS", "005930.KS", "WDC", "STX"],
+  "AI 데이터센터": ["VRT", "APLD", "IREN", "SMCI", "DLR"],
+  "네오클라우드": ["NBIS", "CRWV", "CORZ", "APLD"],
+  "양자컴퓨팅": ["IONQ", "RGTI", "QBTS", "INFQ", "QUBT"],
+  "소프트웨어": ["MSFT", "PLTR", "CRM", "NOW", "SNOW"],
+  "전기차": ["TSLA", "RIVN", "LCID", "BYDDY"],
+  "2차전지": ["373220.KS", "006400.KS", "051910.KS"],
+  "바이오/헬스케어": ["LLY", "NVO", "UNH", "ISRG"],
+  "에너지": ["XOM", "CVX", "NEE"],
+  "방산/우주": ["LMT", "RTX", "RKLB"],
+  "배당주": ["SCHD", "JEPI", "KO", "O"],
+  "크립토": ["BTC", "ETH", "SOL"],
+  "금융": ["JPM", "BAC", "V", "105560.KS"],
 };
+function buildIdeas(sectorData, heldSet) {
+  const wByTheme = {}; sectorData.forEach((d) => { wByTheme[d.sector] = d.pct; });
+  const ideas = [];
+  Object.entries(THEME_CATALOG).forEach(([theme, tickers]) => {
+    const fresh = tickers.filter((t) => !heldSet.has(t.toUpperCase()));
+    if (!fresh.length) return;
+    const w = wByTheme[theme] || 0;
+    ideas.push({ kind: w < 8 ? "diversify" : "more", theme, ticker: fresh[0] });
+  });
+  return ideas;
+}
+
+/* famous investors + representative holdings (참고용 / illustrative) */
+const WHALES = [
+  { name: "워런 버핏", fund: "버크셔 해서웨이", holdings: ["AAPL", "AXP", "KO", "BAC"], hue: "#e8453c" },
+  { name: "빌 애크먼", fund: "퍼싱 스퀘어", holdings: ["GOOG", "CMG", "HLT", "QSR"], hue: "#16c784" },
+  { name: "캐시 우드", fund: "ARK Invest", holdings: ["TSLA", "COIN", "ROKU", "PLTR"], hue: "#8b5cf6" },
+  { name: "스탠리 드러켄밀러", fund: "듀케인", holdings: ["NVDA", "MSFT", "CPNG"], hue: "#f5a623" },
+  { name: "테리 스미스", fund: "펀드스미스", holdings: ["MSFT", "META", "NVO"], hue: "#ec4899" },
+  { name: "체이스 콜먼", fund: "타이거 글로벌", holdings: ["META", "NVDA", "SE"], hue: "#0fb9b1" },
+  { name: "데이비드 테퍼", fund: "아팔루사", holdings: ["NVDA", "BABA", "AMZN"], hue: "#3b82f6" },
+  { name: "마이클 버리", fund: "사이언", holdings: ["EL", "BABA", "JD"], hue: "#fc6e51" },
+];
 
 /* presets shown in the sector autocomplete (you can also type your own) */
 const SECTOR_PRESETS = [
@@ -57,8 +102,7 @@ const THEME_MAP = {
   "AVGO": "AI 반도체", "AMD": "AI 반도체", "TSM": "반도체 파운드리",
 };
 
-const hashHue = (s) => { let h = 0; for (let i = 0; i < (s || "").length; i++) h = (h * 31 + s.charCodeAt(i)) % 360; return h; };
-const sectorColor = (sector) => SECTOR_COLORS[sector] || `hsl(${hashHue(sector)},58%,60%)`;
+
 
 const YH_SECTOR = {
   "Technology": "Technology", "Communication Services": "Communication",
@@ -78,6 +122,22 @@ const CRYPTO_NAMES = {
   BTC: "Bitcoin", ETH: "Ethereum", SOL: "Solana", XRP: "XRP", ADA: "Cardano",
   DOGE: "Dogecoin", BNB: "BNB", AVAX: "Avalanche", DOT: "Polkadot",
   MATIC: "Polygon", LINK: "Chainlink", TRX: "TRON",
+};
+
+/* common Korean company names -> Yahoo ticker (reliable instant resolution;
+   anything not here still falls back to Yahoo search) */
+const KR_NAME_MAP = {
+  "삼성전자": "005930.KS", "삼성전자우": "005935.KS", "SK하이닉스": "000660.KS", "에스케이하이닉스": "000660.KS",
+  "LG에너지솔루션": "373220.KS", "엘지에너지솔루션": "373220.KS", "삼성바이오로직스": "207940.KS",
+  "현대차": "005380.KS", "기아": "000270.KS", "셀트리온": "068270.KS", "네이버": "035420.KS", "NAVER": "035420.KS",
+  "카카오": "035720.KS", "삼성SDI": "006400.KS", "LG화학": "051910.KS", "엘지화학": "051910.KS",
+  "포스코홀딩스": "005490.KS", "POSCO홀딩스": "005490.KS", "현대모비스": "012330.KS", "삼성물산": "028260.KS",
+  "KB금융": "105560.KS", "신한지주": "055550.KS", "하나금융지주": "086790.KS", "삼성생명": "032830.KS",
+  "SK이노베이션": "096770.KS", "LG전자": "066570.KS", "엘지전자": "066570.KS", "한미반도체": "042700.KS",
+  "두산에너빌리티": "034020.KS", "HD현대중공업": "329180.KS", "한화에어로스페이스": "012450.KS",
+  "삼성전기": "009150.KS", "SK텔레콤": "017670.KS", "KT": "030200.KS", "크래프톤": "259960.KS",
+  "에코프로비엠": "247540.KQ", "에코프로": "086520.KQ", "알테오젠": "196170.KQ", "엔켐": "348370.KQ",
+  "리노공업": "058470.KQ", "HLB": "028300.KQ", "JYP Ent.": "035900.KQ", "펄어비스": "263750.KQ",
 };
 
 const SEED = [
@@ -165,20 +225,52 @@ async function classifyTicker(symbol, name) {
   return null;
 }
 
+/* Screenshot -> holdings via Claude vision. Deploy build POSTs to /api/parse. */
+async function parseScreenshot(image, media_type) {
+  try {
+    const r = await fetch("/api/parse", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ image, media_type }) });
+    if (r.ok) { const j = await r.json(); if (Array.isArray(j.holdings)) return j.holdings; }
+  } catch { /* none */ }
+  return [];
+}
+
+/* minimal CSV/TSV parser: ticker, qty, avgCost[, currency] per line */
+function parseCSV(text) {
+  const rows = [];
+  (text || "").trim().split(/\r?\n/).forEach((line) => {
+    if (!line.trim()) return;
+    const p = line.split(/[,\t]/).map((s) => s.trim());
+    if (p.length < 2) return;
+    if (isNaN(parseFloat(p[1]))) return; // header / junk
+    const cur = /KRW|won|원|₩/i.test(p[3] || "") ? "KRW" : /USD|\$/i.test(p[3] || "") ? "USD" : undefined;
+    rows.push({ ticker: p[0], qty: parseFloat(p[1]), avgCost: p[2] != null && p[2] !== "" && !isNaN(parseFloat(p[2])) ? parseFloat(p[2]) : null, cur });
+  });
+  return rows;
+}
+
+const BENCH = [{ sym: "^GSPC", label: "S&P 500" }, { sym: "^IXIC", label: "나스닥" }, { sym: "^KS11", label: "코스피" }];
+
 async function lookupTicker(query) {
+  const trimmed = (query || "").trim();
+  // 1) Korean name map → instant, reliable
+  if (KR_NAME_MAP[trimmed]) {
+    return { symbol: KR_NAME_MAP[trimmed], name: trimmed, sector: null };
+  }
+  // 2) our backend (Yahoo search)
   try {
-    const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(query)}`);
-    if (r.ok) { const j = await r.json(); if (j && j[query]) return j[query]; }
+    const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(trimmed)}`);
+    if (r.ok) { const j = await r.json(); if (j && j[trimmed] && j[trimmed].symbol) return j[trimmed]; }
   } catch { /* fall through */ }
+  // 3) direct Yahoo search via public proxy (works in local/preview)
   try {
-    const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(query)}&quotesCount=6&newsCount=0`;
+    const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(trimmed)}&quotesCount=10&newsCount=0`;
     const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`);
     const j = await r.json();
-    const quotes = (j?.quotes || []).filter((x) => x.symbol);
-    const hangul = /[\uAC00-\uD7A3]/.test(query);
+    const quotes = (j?.quotes || []).filter((x) => x.symbol && (x.quoteType === "EQUITY" || x.quoteType === "ETF" || !x.quoteType));
+    const hangul = /[\uAC00-\uD7A3]/.test(trimmed);
     const q = (hangul
-      ? quotes.find((x) => /\.(KS|KQ)$/i.test(x.symbol))
-      : quotes.find((x) => x.symbol.toUpperCase() === query.toUpperCase())) || quotes[0];
+      ? (quotes.find((x) => /\.(KS|KQ)$/i.test(x.symbol)) || quotes[0])
+      : (quotes.find((x) => x.symbol.toUpperCase() === trimmed.toUpperCase()) || quotes[0]));
     if (q) return { symbol: q.symbol, name: q.longname || q.shortname || null, sector: q.sector || null };
   } catch { /* skip */ }
   return null;
@@ -215,12 +307,18 @@ export default function App() {
   const [capReturn, setCapReturn] = useState(25);
   const [showPct, setShowPct] = useState(true);
   const [labelMode, setLabelMode] = useState("ticker");
+  const [goal, setGoal] = useState(null);          // { amount, cur }
+  const [snapshots, setSnapshots] = useState([]);   // [{ t: 'YYYY-MM-DD', v: USD }]
+  const [benchmarks, setBenchmarks] = useState({}); // { '^GSPC': {chg}, ... }
+  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => {
     (async () => {
       const s = await loadSaved();
       if (s?.holdings?.length) setHoldings(s.holdings.map((h) => ({ avgCost: null, ...h })));
       if (s?.cash) setCash(s.cash);
+      if (s?.goal) setGoal(s.goal);
+      if (s?.snapshots) setSnapshots(s.snapshots);
       const x = s?.settings;
       if (x) {
         if (x.themeName) setThemeName(x.themeName);
@@ -236,8 +334,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hydrated) persist({ holdings, cash, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } });
-  }, [holdings, cash, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, hydrated]);
+    if (hydrated) persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } });
+  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, hydrated]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -245,7 +343,10 @@ export default function App() {
     if (krw) { setFx(krw); setFxLive(true); } else { setFx((p) => p ?? 1380); setFxLive(false); }
     const cryptoSyms = holdings.filter((h) => h.type === "crypto").map((h) => h.ticker.toUpperCase());
     const stockSyms = [...new Set(holdings.filter((h) => h.type !== "crypto" && h.ticker).map((h) => h.ticker))];
-    const [cryptoData, stockData] = await Promise.all([fetchCrypto(cryptoSyms), fetchStocks(stockSyms)]);
+    const [cryptoData, stockData, bench] = await Promise.all([
+      fetchCrypto(cryptoSyms), fetchStocks(stockSyms), fetchStocks(["^GSPC", "^IXIC", "^KS11"]),
+    ]);
+    setBenchmarks(bench || {});
     setHoldings((prev) => prev.map((h) => {
       if (h.type === "crypto") { const d = cryptoData[h.ticker.toUpperCase()]; return d ? { ...h, price: d.price, chg: d.chg, cur: "USD", live: true } : h; }
       const d = stockData[h.ticker]; return d ? { ...h, price: d.price, chg: d.chg, cur: d.cur || h.cur, mkt: d.mkt, live: true } : h;
@@ -278,6 +379,18 @@ export default function App() {
   const totalAssets = positionsValue + cashValue;
   const cashPct = totalAssets ? (cashValue / totalAssets) * 100 : 0;
   const totalReturn = positionsCost ? ((positionsValue - positionsCost) / positionsCost) * 100 : null;
+
+  /* record one net-worth snapshot per day (stored in USD base) */
+  useEffect(() => {
+    if (!hydrated || !totalAssets) return;
+    const usd = displayCur === "USD" ? totalAssets : totalAssets / rate;
+    const today = new Date().toISOString().slice(0, 10);
+    setSnapshots((prev) => {
+      const last = prev[prev.length - 1];
+      if (last && last.t === today && Math.abs(last.v - usd) < 0.01) return prev;
+      return [...prev.filter((s) => s.t !== today), { t: today, v: usd }].slice(-180);
+    });
+  }, [hydrated, totalAssets, rate, displayCur]);
 
   const dayChange = useMemo(() => {
     let w = 0, sum = 0;
@@ -341,6 +454,38 @@ export default function App() {
     }
   }, []);
 
+  const colorMap = useMemo(() => buildColorMap(sectorData.map((d) => d.sector)), [sectorData]);
+  const heldSet = useMemo(() => new Set(holdings.map((h) => (h.ticker || "").toUpperCase()).filter(Boolean)), [holdings]);
+  const ideas = useMemo(() => buildIdeas(sectorData, heldSet), [sectorData, heldSet]);
+
+  const addAndFill = useCallback((ticker) => {
+    const t = (ticker || "").toUpperCase();
+    if (!t || heldSet.has(t)) return;
+    const type = /\.(KS|KQ)$/i.test(t) ? "kr" : (CRYPTO_IDS[t] ? "crypto" : "us");
+    const id = uid();
+    setHoldings((p) => [...p, { id, type, ticker: t, name: "", sector: "", qty: 0, avgCost: null, price: null, cur: type === "kr" ? "KRW" : "USD", chg: null, live: false }]);
+    setTimeout(() => autoFill(id, t, type), 50);
+  }, [heldSet, autoFill]);
+
+  /* bulk import (from CSV or screenshot) — rows: [{ticker, qty, avgCost, cur?}] */
+  const importHoldings = useCallback((rows) => {
+    let added = 0;
+    rows.forEach((row) => {
+      const raw = (row.ticker || "").toString().trim();
+      if (!raw) return;
+      const t = raw.toUpperCase();
+      const isCrypto = !!CRYPTO_IDS[t];
+      const isKR = /\.(KS|KQ)$/i.test(t) || /[\uAC00-\uD7A3]/.test(raw);
+      const type = isCrypto ? "crypto" : isKR ? "kr" : "us";
+      const id = uid();
+      const cur = row.cur || (type === "kr" ? "KRW" : "USD");
+      setHoldings((p) => [...p, { id, type, ticker: type === "crypto" ? t : raw, name: "", sector: "", qty: Number(row.qty) || 0, avgCost: row.avgCost != null && row.avgCost !== "" ? Number(row.avgCost) : null, price: null, cur, chg: null, live: false }]);
+      setTimeout(() => autoFill(id, type === "crypto" ? t : raw, type), 90 * added + 60);
+      added++;
+    });
+    return added;
+  }, [autoFill]);
+
   const capNow = heatMode === "return" ? capReturn : capChange;
 
   return (
@@ -356,6 +501,9 @@ export default function App() {
         .ph-tile{transition:filter .14s, box-shadow .14s;cursor:default;}
         .ph-tile:hover{filter:brightness(1.14);box-shadow:inset 0 0 0 2px rgba(255,255,255,.6);z-index:6;}
         .ph-legend{transition:background .12s;border-radius:7px;} .ph-legend:hover{background:${th.rowHover};}
+        @keyframes mqscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+        .mq-track{animation-name:mqscroll;animation-timing-function:linear;animation-iteration-count:infinite;}
+        .mq:hover .mq-track{animation-play-state:paused;}
         ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:${th.border};border-radius:4px;}
         @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
         input[type=range]{accent-color:${th.accent};}
@@ -392,7 +540,8 @@ export default function App() {
       </div>
 
       {/* BODY */}
-      <div style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 340px", gap: 16, padding: 18, alignItems: "start" }} className="ph-grid">
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
+        {/* Heatmap — full width */}
         <Panel th={th} title="Heatmap" glow
           titleExtra={<Segmented th={th} value={heatMode} onChange={setHeatMode} options={[["change", "현재가"], ["return", "내 수익률"]]} />}
           right={<HeatControls th={th} mode={heatMode} cap={capNow} setCap={heatMode === "return" ? setCapReturn : setCapChange} showPct={showPct} setShowPct={setShowPct} labelMode={labelMode} setLabelMode={setLabelMode} />}>
@@ -400,25 +549,43 @@ export default function App() {
           <HeatLegend th={th} cap={capNow} mode={heatMode} />
         </Panel>
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-          <Panel th={th} title="섹터별 자산 비중" sub={`${sectorData.length}개 구성`}>
-            <Donut data={sectorData} th={th} />
-          </Panel>
-          <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
-            investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
-        </div>
-      </div>
-
-      {/* TABLE */}
-      <div style={{ padding: "0 18px 36px" }}>
+        {/* My portfolio */}
         <Panel th={th} title="내 포트폴리오" sub="티커만 넣으면 이름·섹터 자동 분류"
-          right={<button className="ph-btn ph-primary" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>}>
+          right={
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="ph-btn" onClick={() => setShowImport((v) => !v)} style={{ ...secondaryBtn(th) }}><Upload size={14} /> 가져오기</button>
+              <button className="ph-btn ph-primary" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>
+            </div>
+          }>
+          {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
           <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} />
           <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
-            티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터 자동</b> 입력. 한국주식 <b style={{ color: th.textDim }}>005930.KS</b>(코스닥 .KQ), 크립토 <b style={{ color: th.textDim }}>BTC</b>.
+            티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터 자동</b> 입력. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다. 크립토 <b style={{ color: th.textDim }}>BTC</b>.
             <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다.
           </p>
         </Panel>
+
+        {/* cash + sector donut */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} className="ph-grid">
+          <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
+            investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
+          <Panel th={th} title="섹터별 자산 비중" sub={`${sectorData.length}개 구성`}>
+            <Donut data={sectorData} th={th} colorMap={colorMap} />
+          </Panel>
+        </div>
+
+        {/* goal + benchmark */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} className="ph-grid">
+          <GoalCard th={th} goal={goal} setGoal={setGoal} totalAssets={totalAssets} displayCur={displayCur} conv={conv} />
+          <BenchmarkCard th={th} dayChange={dayChange} benchmarks={benchmarks} />
+        </div>
+
+        {/* net-worth trend */}
+        <TrendCard th={th} snapshots={snapshots} displayCur={displayCur} rate={rate} />
+
+        {/* recommendations */}
+        <ThemeIdeas th={th} ideas={ideas} onPick={addAndFill} />
+        <WhalePortfolios th={th} onPick={addAndFill} />
       </div>
     </div>
   );
@@ -442,11 +609,11 @@ function CashCard({ th, cash, displayCur, conv, cashValue, cashPct, investedValu
       {/* invested vs cash bar */}
       <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", background: th.inputBg, marginBottom: 6 }}>
         <div style={{ width: `${investedPct}%`, background: th.accent }} />
-        <div style={{ width: `${cashPct}%`, background: SECTOR_COLORS.Cash }} />
+        <div style={{ width: `${cashPct}%`, background: CASH_COLOR }} />
       </div>
       <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: th.textDim, marginBottom: 14 }}>
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Dot c={th.accent} />투자 {fmt(investedPct, 1)}%</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Dot c={SECTOR_COLORS.Cash} />현금 {fmt(cashPct, 1)}%</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}><Dot c={CASH_COLOR} />현금 {fmt(cashPct, 1)}%</span>
       </div>
 
       {/* cash entries */}
@@ -556,7 +723,8 @@ function HeatLegend({ th, cap, mode }) {
 /* ------------------------------------------------------------------ *
  *  DONUT                                                              *
  * ------------------------------------------------------------------ */
-function Donut({ data, th }) {
+function Donut({ data, th, colorMap }) {
+  const col = (s) => (colorMap && colorMap[s]) || "#888";
   if (!data.length) return <div style={{ height: 220, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13 }}>데이터 없음</div>;
   const top = data[0];
   return (
@@ -565,13 +733,13 @@ function Donut({ data, th }) {
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie data={data} dataKey="value" nameKey="sector" cx="50%" cy="50%" innerRadius={60} outerRadius={90} paddingAngle={2} stroke="none" startAngle={90} endAngle={-270}>
-              {data.map((d) => <Cell key={d.sector} fill={sectorColor(d.sector)} />)}
+              {data.map((d) => <Cell key={d.sector} fill={col(d.sector)} />)}
             </Pie>
           </PieChart>
         </ResponsiveContainer>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
           <div style={{ textAlign: "center" }}>
-            <div className="num" style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: sectorColor(top.sector) }}>{fmt(top.pct, 1)}%</div>
+            <div className="num" style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: col(top.sector) }}>{fmt(top.pct, 1)}%</div>
             <div style={{ fontSize: 11, color: th.textDim, maxWidth: 90, lineHeight: 1.2 }}>{top.sector}</div>
           </div>
         </div>
@@ -579,7 +747,7 @@ function Donut({ data, th }) {
       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 7 }}>
         {data.map((d) => (
           <div key={d.sector} className="ph-legend" style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, padding: "3px 6px", margin: "0 -6px" }}>
-            <Dot c={sectorColor(d.sector)} /><span style={{ flex: 1, color: th.text }}>{d.sector}</span>
+            <Dot c={col(d.sector)} /><span style={{ flex: 1, color: th.text }}>{d.sector}</span>
             <span className="num" style={{ color: th.textDim, fontWeight: 600 }}>{fmt(d.pct, 1)}%</span>
           </div>
         ))}
@@ -682,5 +850,228 @@ function Segmented({ th, value, onChange, options, small }) {
 }
 const iconBtn = (th) => ({ display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 10, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, cursor: "pointer" });
 const primaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.accent, color: "#fff", border: "none", padding: "8px 13px", borderRadius: 10, fontWeight: 700, fontSize: 12.5, cursor: "pointer" });
+const secondaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.panelAlt, color: th.text, border: `1px solid ${th.border}`, padding: "8px 13px", borderRadius: 10, fontWeight: 700, fontSize: 12.5, cursor: "pointer" });
 const inpStyle = (th, w) => ({ width: w || undefined, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: "6px 9px", fontSize: 12.5 });
 const selStyle = (th, w) => ({ width: w, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: "6px 7px", fontSize: 12, cursor: "pointer" });
+
+/* ------------------------------------------------------------------ *
+ *  CAROUSELS (auto-scroll, therich.io style)                          *
+ * ------------------------------------------------------------------ */
+function Marquee({ children, duration = 40 }) {
+  return (
+    <div className="mq" style={{ overflow: "hidden", position: "relative", WebkitMaskImage: "linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent)", maskImage: "linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent)" }}>
+      <div className="mq-track" style={{ display: "flex", gap: 12, width: "max-content", animationDuration: `${duration}s` }}>
+        {children}{children}
+      </div>
+    </div>
+  );
+}
+
+function ThemeIdeas({ th, ideas, onPick }) {
+  if (!ideas.length) return null;
+  return (
+    <Panel th={th} title="투자 아이디어" sub="나에게 맞는 테마주는? · 클릭하면 내 포트폴리오에 추가">
+      <Marquee duration={46}>
+        {ideas.map((it, i) => {
+          const grad = i % 4 === 3;
+          return (
+            <button key={i} className="ph-btn" onClick={() => onPick(it.ticker)}
+              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 156, padding: "12px 18px", borderRadius: 999, border: `1px solid ${grad ? "transparent" : th.border}`, background: grad ? "linear-gradient(100deg,#7c4dff,#2d9cdb)" : th.panelAlt, color: grad ? "#fff" : th.text, cursor: "pointer", whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 10.5, opacity: 0.78, fontWeight: 600 }}>{it.kind === "diversify" ? "다양화 · " : "+ 추가 · "}{it.theme}</span>
+              <span style={{ fontWeight: 800, fontSize: 14 }}>{(it.ticker || "").replace(".KS", "").replace(".KQ", "")}</span>
+            </button>
+          );
+        })}
+      </Marquee>
+    </Panel>
+  );
+}
+
+function WhaleCard({ th, w, onPick }) {
+  return (
+    <div className="ph-card" style={{ width: 234, padding: 16, borderRadius: 14, border: `1px solid ${th.border}`, background: th.panel }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 11 }}>
+        <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${w.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", flexShrink: 0 }}>{w.name.slice(0, 1)}</div>
+        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{w.name}</div><div style={{ fontSize: 11, color: th.textDim, whiteSpace: "nowrap" }}>{w.fund}</div></div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+        {w.holdings.map((t) => (
+          <button key={t} className="ph-btn" onClick={() => onPick(t)} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 7, border: `1px solid ${th.border}`, background: th.panelAlt, color: th.text, cursor: "pointer" }}>{t}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WhalePortfolios({ th, onPick }) {
+  return (
+    <Panel th={th} title="부자들의 포트폴리오" sub="유명 투자자 대표 종목 (참고용) · 종목 클릭 시 추가">
+      <Marquee duration={62}>
+        {WHALES.map((w, i) => <div key={i}><WhaleCard th={th} w={w} onPick={onPick} /></div>)}
+      </Marquee>
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  GOAL                                                               *
+ * ------------------------------------------------------------------ */
+function GoalCard({ th, goal, setGoal, totalAssets, displayCur, conv }) {
+  const amount = goal?.amount ?? "";
+  const gcur = goal?.cur || displayCur;
+  const goalInDisplay = goal?.amount ? conv(goal.amount, gcur) : 0;
+  const pct = goalInDisplay ? Math.min(100, (totalAssets / goalInDisplay) * 100) : 0;
+  const remaining = Math.max(0, goalInDisplay - totalAssets);
+  return (
+    <Panel th={th} title="목표 설정" titleExtra={<Target size={15} color={th.textDim} />}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
+        <span style={{ fontSize: 12, color: th.textDim }}>목표 금액</span>
+        <input type="number" value={amount} placeholder="예: 100000000" onChange={(e) => setGoal({ amount: e.target.value === "" ? null : parseFloat(e.target.value), cur: gcur })} style={{ ...inpStyle(th, 0), flex: 1, textAlign: "right" }} className="num" />
+        <select value={gcur} onChange={(e) => setGoal({ amount: goal?.amount ?? null, cur: e.target.value })} style={selStyle(th, 54)}><option value="USD">$</option><option value="KRW">₩</option></select>
+      </div>
+      {goalInDisplay ? (
+        <>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
+            <span className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: -0.6, color: pct >= 100 ? th.heatPos : th.accent }}>{fmt(pct, 1)}%</span>
+            <span style={{ fontSize: 12, color: th.textDim }}>달성</span>
+          </div>
+          <div style={{ height: 10, borderRadius: 6, overflow: "hidden", background: th.inputBg, marginBottom: 8 }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? th.heatPos : `linear-gradient(90deg,#2d9cdb,#7c4dff)`, transition: "width .4s" }} />
+          </div>
+          <div className="num" style={{ fontSize: 12.5, color: th.textDim }}>
+            {fmtMoney(totalAssets, displayCur)} / {fmtMoney(goalInDisplay, displayCur)}
+            {remaining > 0 && <span> · 남은 금액 <b style={{ color: th.text }}>{fmtMoney(remaining, displayCur)}</b></span>}
+            {pct >= 100 && <span style={{ color: th.heatPos, fontWeight: 700 }}> · 목표 달성! 🎉</span>}
+          </div>
+        </>
+      ) : (
+        <div style={{ fontSize: 12.5, color: th.textFaint, padding: "8px 0" }}>목표 금액을 입력하면 달성률이 표시됩니다.</div>
+      )}
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  BENCHMARK (today's performance vs indices)                         *
+ * ------------------------------------------------------------------ */
+function BenchmarkCard({ th, dayChange, benchmarks }) {
+  const rows = [{ label: "내 포트폴리오", v: dayChange, me: true }, ...BENCH.map((b) => ({ label: b.label, v: benchmarks[b.sym]?.chg ?? null }))];
+  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.v || 0)));
+  return (
+    <Panel th={th} title="벤치마크 대비" sub="오늘 변동률 비교">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {rows.map((r, i) => {
+          const v = r.v, w = v == null ? 0 : (Math.abs(v) / maxAbs) * 50;
+          const c = v == null ? th.textFaint : v >= 0 ? th.heatPos : th.heatNeg;
+          return (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ width: 92, fontSize: 12.5, fontWeight: r.me ? 800 : 500, color: r.me ? th.text : th.textDim, flexShrink: 0 }}>{r.label}</span>
+              <div style={{ flex: 1, position: "relative", height: 18, background: th.inputBg, borderRadius: 5 }}>
+                <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: th.border }} />
+                {v != null && <div style={{ position: "absolute", top: 3, bottom: 3, borderRadius: 3, background: c, ...(v >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }) }} />}
+              </div>
+              <span className="num" style={{ width: 58, textAlign: "right", fontSize: 12.5, fontWeight: 700, color: c }}>{v == null ? "—" : `${v >= 0 ? "+" : ""}${fmt(v)}%`}</span>
+            </div>
+          );
+        })}
+      </div>
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  NET-WORTH TREND                                                    *
+ * ------------------------------------------------------------------ */
+function TrendCard({ th, snapshots, displayCur, rate }) {
+  const data = (snapshots || []).map((s) => ({ t: s.t, v: displayCur === "USD" ? s.v : s.v * rate }));
+  const enough = data.length >= 2;
+  const first = data[0]?.v, last = data[data.length - 1]?.v;
+  const chg = enough && first ? ((last - first) / first) * 100 : null;
+  return (
+    <Panel th={th} title="자산 추이" sub={enough ? `${data.length}일 기록` : "기록이 쌓이면 추이가 보여요"}
+      right={chg != null && <span className="num" style={{ fontSize: 13, fontWeight: 700, color: chg >= 0 ? th.heatPos : th.heatNeg }}>{chg >= 0 ? "+" : ""}{fmt(chg)}%</span>}>
+      {enough ? (
+        <div style={{ height: 200 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+              <defs>
+                <linearGradient id="nw" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={th.accent} stopOpacity={0.4} />
+                  <stop offset="100%" stopColor={th.accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="t" tick={{ fontSize: 10, fill: th.textFaint }} tickFormatter={(t) => t.slice(5)} minTickGap={28} axisLine={false} tickLine={false} />
+              <YAxis hide domain={["dataMin", "dataMax"]} />
+              <Tooltip contentStyle={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, fontSize: 12, color: th.text }} labelStyle={{ color: th.textDim }} formatter={(v) => [fmtMoney(v, displayCur), "총자산"]} />
+              <Area type="monotone" dataKey="v" stroke={th.accent} strokeWidth={2} fill="url(#nw)" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div style={{ height: 120, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13, textAlign: "center", lineHeight: 1.6 }}>
+          매일 접속하면 그날의 총자산이 자동 기록되어<br />며칠 뒤부터 자산 변화 그래프가 그려집니다.
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  IMPORT (CSV / screenshot)                                          *
+ * ------------------------------------------------------------------ */
+function ImportPanel({ th, onImport }) {
+  const [mode, setMode] = useState("csv");
+  const [csv, setCsv] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const doCsv = () => {
+    const rows = parseCSV(csv);
+    if (!rows.length) { setMsg("인식된 줄이 없어요. '티커, 수량, 평단가' 형식으로 입력해 주세요."); return; }
+    const n = onImport(rows);
+    setMsg(`${n}개 종목을 가져왔어요.`);
+  };
+
+  const doImage = async (file) => {
+    if (!file) return;
+    setBusy(true); setMsg("스크린샷을 분석하는 중…");
+    try {
+      const data = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result.split(",")[1]); r.onerror = rej; r.readAsDataURL(file); });
+      const rows = await parseScreenshot(data, file.type || "image/png");
+      if (!rows.length) { setMsg("종목을 찾지 못했어요. (배포본은 ANTHROPIC_API_KEY 설정이 필요해요)"); }
+      else { const n = onImport(rows); setMsg(`${n}개 종목을 가져왔어요.`); }
+    } catch { setMsg("분석에 실패했어요. 다시 시도해 주세요."); }
+    setBusy(false);
+  };
+
+  return (
+    <div style={{ border: `1px solid ${th.border}`, borderRadius: 12, padding: 14, marginBottom: 14, background: th.band }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <button className="ph-btn" onClick={() => setMode("csv")} style={tabBtn(th, mode === "csv")}><FileText size={14} /> CSV 붙여넣기</button>
+        <button className="ph-btn" onClick={() => setMode("img")} style={tabBtn(th, mode === "img")}><ImageIcon size={14} /> 스크린샷</button>
+      </div>
+      {mode === "csv" ? (
+        <>
+          <textarea value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={"한 줄에 한 종목:  티커, 수량, 평단가\nAAPL, 30, 175\n삼성전자, 100, 68000\nBTC, 0.5, 55000"}
+            style={{ width: "100%", minHeight: 96, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: 10, fontSize: 12.5, fontFamily: "inherit", resize: "vertical" }} />
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+            <button className="ph-btn ph-primary" onClick={doCsv} style={primaryBtn(th)}>가져오기</button>
+          </div>
+        </>
+      ) : (
+        <div>
+          <label style={{ ...secondaryBtn(th), display: "inline-flex", cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}>
+            <Upload size={14} /> {busy ? "분석 중…" : "스크린샷 선택"}
+            <input type="file" accept="image/*" disabled={busy} onChange={(e) => doImage(e.target.files?.[0])} style={{ display: "none" }} />
+          </label>
+          <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 8, lineHeight: 1.6 }}>
+            증권사 앱 보유종목 화면을 캡처해서 올리면 AI가 티커·수량·평단가를 읽어 자동 입력해요.
+            배포본에서는 <b style={{ color: th.textDim }}>ANTHROPIC_API_KEY</b> 등록이 필요합니다(미리보기는 바로 동작).
+          </p>
+        </div>
+      )}
+      {msg && <div style={{ fontSize: 12, color: th.accent, marginTop: 10 }}>{msg}</div>}
+    </div>
+  );
+}
+const tabBtn = (th, on) => ({ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, border: `1px solid ${on ? "transparent" : th.border}`, background: on ? th.accent : "transparent", color: on ? "#fff" : th.textDim, fontWeight: 700, fontSize: 12, cursor: "pointer" });
