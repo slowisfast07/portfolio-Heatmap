@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import * as d3 from "d3";
-import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar, ReferenceLine } from "recharts";
 import {
   Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
   Image as ImageIcon, FileText,
@@ -78,14 +78,14 @@ function buildIdeas(sectorData, heldSet) {
 
 /* famous investors + representative holdings (참고용 / illustrative) */
 const WHALES = [
-  { name: "워런 버핏", fund: "버크셔 해서웨이", holdings: ["AAPL", "AXP", "KO", "BAC"], hue: "#e8453c" },
-  { name: "빌 애크먼", fund: "퍼싱 스퀘어", holdings: ["GOOG", "CMG", "HLT", "QSR"], hue: "#16c784" },
-  { name: "캐시 우드", fund: "ARK Invest", holdings: ["TSLA", "COIN", "ROKU", "PLTR"], hue: "#8b5cf6" },
-  { name: "스탠리 드러켄밀러", fund: "듀케인", holdings: ["NVDA", "MSFT", "CPNG"], hue: "#f5a623" },
-  { name: "테리 스미스", fund: "펀드스미스", holdings: ["MSFT", "META", "NVO"], hue: "#ec4899" },
-  { name: "체이스 콜먼", fund: "타이거 글로벌", holdings: ["META", "NVDA", "SE"], hue: "#0fb9b1" },
-  { name: "데이비드 테퍼", fund: "아팔루사", holdings: ["NVDA", "BABA", "AMZN"], hue: "#3b82f6" },
-  { name: "마이클 버리", fund: "사이언", holdings: ["EL", "BABA", "JD"], hue: "#fc6e51" },
+  { name: "워런 버핏", fund: "버크셔 해서웨이", q: "Berkshire Hathaway", hue: "#e8453c", desc: "가치투자의 대명사. 경제적 해자를 가진 우량 기업을 사서 장기 보유하는 전략으로 유명합니다.", holdings: [{ t: "AAPL", w: 40 }, { t: "AXP", w: 16 }, { t: "BAC", w: 11 }, { t: "KO", w: 9 }, { t: "CVX", w: 6 }] },
+  { name: "빌 애크먼", fund: "퍼싱 스퀘어", q: "Pershing Square", hue: "#16c784", desc: "소수 종목에 집중 투자하는 행동주의 투자자. 경영 개입으로 기업가치를 끌어올리는 스타일.", holdings: [{ t: "GOOG", w: 19 }, { t: "CMG", w: 17 }, { t: "HLT", w: 16 }, { t: "QSR", w: 14 }, { t: "BN", w: 12 }] },
+  { name: "캐시 우드", fund: "ARK Invest", q: "ARK Investment Management", hue: "#8b5cf6", desc: "파괴적 혁신·성장주에 베팅하는 액티브 ETF 운용사. 변동성이 크지만 테마 투자의 상징.", holdings: [{ t: "TSLA", w: 12 }, { t: "COIN", w: 10 }, { t: "ROKU", w: 8 }, { t: "PLTR", w: 7 }, { t: "HOOD", w: 6 }] },
+  { name: "스탠리 드러켄밀러", fund: "듀케인", q: "Duquesne Family Office", hue: "#f5a623", desc: "거시경제 흐름을 읽어 큰 베팅을 하는 전설적 매크로 투자자.", holdings: [{ t: "NVDA", w: 10 }, { t: "MSFT", w: 8 }, { t: "CPNG", w: 7 }, { t: "TEVA", w: 6 }] },
+  { name: "테리 스미스", fund: "펀드스미스", q: "Fundsmith", hue: "#ec4899", desc: "\"좋은 기업을 사서 가만히 둔다\"는 원칙의 영국 대표 장기투자자.", holdings: [{ t: "MSFT", w: 9 }, { t: "META", w: 8 }, { t: "NVO", w: 7 }, { t: "PG", w: 6 }] },
+  { name: "체이스 콜먼", fund: "타이거 글로벌", q: "Tiger Global", hue: "#0fb9b1", desc: "기술·인터넷 성장주에 집중하는 헤지펀드. 비상장 투자로도 유명.", holdings: [{ t: "META", w: 14 }, { t: "NVDA", w: 11 }, { t: "SE", w: 9 }, { t: "SPOT", w: 8 }] },
+  { name: "데이비드 테퍼", fund: "아팔루사", q: "Appaloosa", hue: "#3b82f6", desc: "역발상·턴어라운드 베팅에 강한 헤지펀드 매니저.", holdings: [{ t: "NVDA", w: 10 }, { t: "BABA", w: 9 }, { t: "AMZN", w: 8 }, { t: "META", w: 7 }] },
+  { name: "마이클 버리", fund: "사이언", q: "Scion Asset Management", hue: "#fc6e51", desc: "영화 '빅쇼트'의 그 인물. 깊은 가치·역발상 베팅으로 유명.", holdings: [{ t: "EL", w: 12 }, { t: "BABA", w: 11 }, { t: "JD", w: 10 }, { t: "BIDU", w: 8 }] },
 ];
 
 /* presets shown in the sector autocomplete (you can also type your own) */
@@ -248,7 +248,59 @@ function parseCSV(text) {
   return rows;
 }
 
-const BENCH = [{ sym: "^GSPC", label: "S&P 500" }, { sym: "^IXIC", label: "나스닥" }, { sym: "^KS11", label: "코스피" }];
+const BENCH = [{ sym: "^GSPC", label: "S&P 500" }, { sym: "^NDX", label: "나스닥100" }, { sym: "^KS11", label: "코스피" }];
+
+/* AI 1-line description (deploy: /api/classify?mode=desc) */
+async function describeTicker(symbol, name) {
+  try {
+    const r = await fetch(`/api/classify?mode=desc&symbol=${encodeURIComponent(symbol)}&name=${encodeURIComponent(name || "")}`);
+    if (r.ok) { const j = await r.json(); if (j && j.text) return j.text; }
+  } catch { /* none */ }
+  return null;
+}
+
+/* daily closes for indicators (deploy: /api/history) */
+async function fetchHistory(symbols) {
+  if (!symbols.length) return {};
+  try {
+    const r = await fetch(`/api/history?symbols=${encodeURIComponent(symbols.join(","))}`);
+    if (r.ok) { const j = await r.json(); if (j && !j.error) return j; }
+  } catch { /* fall through */ }
+  const out = {};
+  await Promise.all(symbols.map(async (sym) => {
+    try {
+      const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=3mo&interval=1d`;
+      const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(y)}`);
+      const j = await r.json();
+      const c = (j?.chart?.result?.[0]?.indicators?.quote?.[0]?.close || []).filter((x) => x != null);
+      if (c.length) out[sym] = { closes: c.slice(-60) };
+    } catch { /* skip */ }
+  }));
+  return out;
+}
+function calcRSI(closes, p = 14) {
+  if (!closes || closes.length < p + 1) return null;
+  let g = 0, l = 0;
+  for (let i = closes.length - p; i < closes.length; i++) { const d = closes[i] - closes[i - 1]; if (d >= 0) g += d; else l -= d; }
+  const al = l / p; if (al === 0) return 100;
+  return 100 - 100 / (1 + (g / p) / al);
+}
+function calcBBPos(closes, p = 20, k = 2) {
+  if (!closes || closes.length < p) return null;
+  const seg = closes.slice(-p);
+  const mid = seg.reduce((a, b) => a + b, 0) / p;
+  const sd = Math.sqrt(seg.reduce((a, b) => a + (b - mid) ** 2, 0) / p);
+  const up = mid + k * sd, lo = mid - k * sd;
+  if (up === lo) return 50;
+  return ((closes[closes.length - 1] - lo) / (up - lo)) * 100;
+}
+
+/* external links */
+const bareCode = (sym) => (sym || "").replace(/\.(KS|KQ)$/i, "");
+const yahooUrl = (sym) => `https://finance.yahoo.com/quote/${encodeURIComponent(sym)}`;
+const tossUrl = (sym) => `https://www.tossinvest.com/stocks/${encodeURIComponent(bareCode(sym))}`;
+const redditUrl = (sym) => `https://www.reddit.com/search/?q=${encodeURIComponent(bareCode(sym) + " stock")}`;
+const edgarUrl = (q) => `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(q)}&type=13F-HR&dateb=&owner=include&count=40`;
 
 async function lookupTicker(query) {
   const trimmed = (query || "").trim();
@@ -311,6 +363,8 @@ export default function App() {
   const [snapshots, setSnapshots] = useState([]);   // [{ t: 'YYYY-MM-DD', v: USD }]
   const [benchmarks, setBenchmarks] = useState({}); // { '^GSPC': {chg}, ... }
   const [showImport, setShowImport] = useState(false);
+  const [selectedIdea, setSelectedIdea] = useState(null);
+  const [selectedWhale, setSelectedWhale] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -343,13 +397,17 @@ export default function App() {
     if (krw) { setFx(krw); setFxLive(true); } else { setFx((p) => p ?? 1380); setFxLive(false); }
     const cryptoSyms = holdings.filter((h) => h.type === "crypto").map((h) => h.ticker.toUpperCase());
     const stockSyms = [...new Set(holdings.filter((h) => h.type !== "crypto" && h.ticker).map((h) => h.ticker))];
-    const [cryptoData, stockData, bench] = await Promise.all([
-      fetchCrypto(cryptoSyms), fetchStocks(stockSyms), fetchStocks(["^GSPC", "^IXIC", "^KS11"]),
+    const metricSyms = [...stockSyms, ...cryptoSyms.map((s) => `${s}-USD`)];
+    const [cryptoData, stockData, bench, hist] = await Promise.all([
+      fetchCrypto(cryptoSyms), fetchStocks(stockSyms), fetchStocks(["^GSPC", "^NDX", "^KS11"]), fetchHistory(metricSyms),
     ]);
     setBenchmarks(bench || {});
     setHoldings((prev) => prev.map((h) => {
-      if (h.type === "crypto") { const d = cryptoData[h.ticker.toUpperCase()]; return d ? { ...h, price: d.price, chg: d.chg, cur: "USD", live: true } : h; }
-      const d = stockData[h.ticker]; return d ? { ...h, price: d.price, chg: d.chg, cur: d.cur || h.cur, mkt: d.mkt, live: true } : h;
+      const mkey = h.type === "crypto" ? `${h.ticker.toUpperCase()}-USD` : h.ticker;
+      const hc = hist[mkey]?.closes;
+      const metrics = hc ? { rsi: calcRSI(hc), bbPos: calcBBPos(hc) } : {};
+      if (h.type === "crypto") { const d = cryptoData[h.ticker.toUpperCase()]; return d ? { ...h, price: d.price, chg: d.chg, cur: "USD", live: true, ...metrics } : { ...h, ...metrics }; }
+      const d = stockData[h.ticker]; return d ? { ...h, price: d.price, chg: d.chg, cur: d.cur || h.cur, mkt: d.mkt, live: true, ...metrics } : { ...h, ...metrics };
     }));
     setLastUpdate(new Date());
     setLoading(false);
@@ -504,6 +562,8 @@ export default function App() {
         @keyframes mqscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
         .mq-track{animation-name:mqscroll;animation-timing-function:linear;animation-iteration-count:infinite;}
         .mq:hover .mq-track{animation-play-state:paused;}
+        .sec{scroll-margin-top:118px;}
+        .navbtn{transition:all .15s;cursor:pointer;} .navbtn:hover{color:${th.text};background:${th.panelAlt};}
         ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:${th.border};border-radius:4px;}
         @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
         input[type=range]{accent-color:${th.accent};}
@@ -539,17 +599,23 @@ export default function App() {
         <span>업데이트 {lastUpdate ? lastUpdate.toLocaleTimeString() : "—"} <span style={{ color: th.textFaint }}>(60초마다 자동)</span></span>
       </div>
 
+      {/* NAV */}
+      <TopNav th={th} />
+
       {/* BODY */}
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
         {/* Heatmap — full width */}
+        <div id="sec-heatmap" className="sec">
         <Panel th={th} title="Heatmap" glow
           titleExtra={<Segmented th={th} value={heatMode} onChange={setHeatMode} options={[["change", "현재가"], ["return", "내 수익률"]]} />}
           right={<HeatControls th={th} mode={heatMode} cap={capNow} setCap={heatMode === "return" ? setCapReturn : setCapChange} showPct={showPct} setShowPct={setShowPct} labelMode={labelMode} setLabelMode={setLabelMode} />}>
           <Treemap leaves={leaves} th={th} cap={capNow} showPct={showPct} labelMode={labelMode} />
           <HeatLegend th={th} cap={capNow} mode={heatMode} />
         </Panel>
+        </div>
 
         {/* My portfolio */}
+        <div id="sec-portfolio" className="sec">
         <Panel th={th} title="내 포트폴리오" sub="티커만 넣으면 이름·섹터 자동 분류"
           right={
             <div style={{ display: "flex", gap: 8 }}>
@@ -560,13 +626,14 @@ export default function App() {
           {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
           <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} />
           <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
-            티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터 자동</b> 입력. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다. 크립토 <b style={{ color: th.textDim }}>BTC</b>.
+            티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표(RSI·볼린저) 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다.
             <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다.
           </p>
         </Panel>
+        </div>
 
         {/* cash + sector donut */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} className="ph-grid">
+        <div id="sec-allocation" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} >
           <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
             investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
           <Panel th={th} title="섹터별 자산 비중" sub={`${sectorData.length}개 구성`}>
@@ -575,17 +642,23 @@ export default function App() {
         </div>
 
         {/* goal + benchmark */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} className="ph-grid">
+        <div id="sec-goal" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
           <GoalCard th={th} goal={goal} setGoal={setGoal} totalAssets={totalAssets} displayCur={displayCur} conv={conv} />
           <BenchmarkCard th={th} dayChange={dayChange} benchmarks={benchmarks} />
         </div>
 
         {/* net-worth trend */}
-        <TrendCard th={th} snapshots={snapshots} displayCur={displayCur} rate={rate} />
+        <div id="sec-trend" className="sec"><TrendCard th={th} snapshots={snapshots} displayCur={displayCur} rate={rate} /></div>
 
         {/* recommendations */}
-        <ThemeIdeas th={th} ideas={ideas} onPick={addAndFill} />
-        <WhalePortfolios th={th} onPick={addAndFill} />
+        <div id="sec-ideas" className="sec">
+          <ThemeIdeas th={th} ideas={ideas} onSelect={setSelectedIdea} selected={selectedIdea} />
+          {selectedIdea && <IdeaDetail th={th} idea={selectedIdea} onClose={() => setSelectedIdea(null)} onAdd={addAndFill} />}
+        </div>
+        <div id="sec-whales" className="sec">
+          <WhalePortfolios th={th} onSelect={setSelectedWhale} selected={selectedWhale} />
+          {selectedWhale && <WhaleDetail th={th} whale={selectedWhale} onClose={() => setSelectedWhale(null)} onAdd={addAndFill} />}
+        </div>
       </div>
     </div>
   );
@@ -765,11 +838,11 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
   return (
     <div style={{ overflowX: "auto" }}>
       <datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1060 }}>
         <thead><tr>
           <th style={head()}>유형</th><th style={head()}>티커</th><th style={head()}>이름</th><th style={head()}>섹터</th>
           <th style={head("right")}>수량</th><th style={head("right")}>평단가</th><th style={head("right")}>현재 주가</th>
-          <th style={head("right")}>일간%</th><th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
+          <th style={head("right")}>일간%</th><th style={head("right")} title="RSI(14)">RSI</th><th style={head("right")} title="볼린저밴드 위치 (20일, 2σ) — %B">BB%</th><th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
         </tr></thead>
         <tbody>
           {holdings.map((h) => {
@@ -792,6 +865,8 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                   )}
                 </td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg, fontWeight: 600 }}>{h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}`}</td>
+                <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600, color: h.rsi == null ? th.textFaint : h.rsi >= 70 ? th.heatNeg : h.rsi <= 30 ? th.heatPos : th.textDim }} title={h.rsi >= 70 ? "과매수권" : h.rsi <= 30 ? "과매도권" : ""}>{h.rsi == null ? "—" : fmt(h.rsi, 0)}</td>
+                <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600, color: h.bbPos == null ? th.textFaint : h.bbPos >= 100 ? th.heatNeg : h.bbPos <= 0 ? th.heatPos : th.textDim }} title="볼린저밴드 내 위치 (0%=하단, 100%=상단)">{h.bbPos == null ? "—" : fmt(h.bbPos, 0) + "%"}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: ret == null ? th.textFaint : ret >= 0 ? th.heatPos : th.heatNeg, fontWeight: 700 }}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}`}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{fmtMoney(v, displayCur)}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: th.textDim }}>{fmt(wpct, 1)}%</td>
@@ -799,7 +874,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
               </tr>
             );
           })}
-          {!holdings.length && <tr><td colSpan={12} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
+          {!holdings.length && <tr><td colSpan={14} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
         </tbody>
       </table>
     </div>
@@ -867,16 +942,16 @@ function Marquee({ children, duration = 40 }) {
   );
 }
 
-function ThemeIdeas({ th, ideas, onPick }) {
+function ThemeIdeas({ th, ideas, onSelect, selected }) {
   if (!ideas.length) return null;
   return (
-    <Panel th={th} title="투자 아이디어" sub="나에게 맞는 테마주는? · 클릭하면 내 포트폴리오에 추가">
+    <Panel th={th} title="투자 아이디어" sub="나에게 맞는 테마주는? · 클릭하면 설명·링크">
       <Marquee duration={46}>
         {ideas.map((it, i) => {
-          const grad = i % 4 === 3;
+          const grad = i % 4 === 3, on = selected && selected.ticker === it.ticker;
           return (
-            <button key={i} className="ph-btn" onClick={() => onPick(it.ticker)}
-              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 156, padding: "12px 18px", borderRadius: 999, border: `1px solid ${grad ? "transparent" : th.border}`, background: grad ? "linear-gradient(100deg,#7c4dff,#2d9cdb)" : th.panelAlt, color: grad ? "#fff" : th.text, cursor: "pointer", whiteSpace: "nowrap" }}>
+            <button key={i} className="ph-btn" onClick={() => onSelect(it)}
+              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 156, padding: "12px 18px", borderRadius: 999, border: `1px solid ${on ? th.accent : grad ? "transparent" : th.border}`, background: grad ? "linear-gradient(100deg,#7c4dff,#2d9cdb)" : th.panelAlt, color: grad ? "#fff" : th.text, cursor: "pointer", whiteSpace: "nowrap" }}>
               <span style={{ fontSize: 10.5, opacity: 0.78, fontWeight: 600 }}>{it.kind === "diversify" ? "다양화 · " : "+ 추가 · "}{it.theme}</span>
               <span style={{ fontWeight: 800, fontSize: 14 }}>{(it.ticker || "").replace(".KS", "").replace(".KQ", "")}</span>
             </button>
@@ -887,29 +962,96 @@ function ThemeIdeas({ th, ideas, onPick }) {
   );
 }
 
-function WhaleCard({ th, w, onPick }) {
+function LinkBtn({ th, href, children, color }) {
+  return <a href={href} target="_blank" rel="noopener noreferrer" className="ph-btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", fontSize: 12.5, fontWeight: 700, padding: "8px 13px", borderRadius: 9, border: `1px solid ${th.border}`, background: th.panelAlt, color: color || th.text }}>{children}</a>;
+}
+
+function IdeaDetail({ th, idea, onClose, onAdd }) {
+  const [desc, setDesc] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const sym = idea.ticker;
+  useEffect(() => {
+    let live = true; setLoading(true); setDesc(null);
+    describeTicker(sym, "").then((t) => { if (live) { setDesc(t); setLoading(false); } });
+    return () => { live = false; };
+  }, [sym]);
   return (
-    <div className="ph-card" style={{ width: 234, padding: 16, borderRadius: 14, border: `1px solid ${th.border}`, background: th.panel }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 11 }}>
-        <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${w.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", flexShrink: 0 }}>{w.name.slice(0, 1)}</div>
-        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{w.name}</div><div style={{ fontSize: 11, color: th.textDim, whiteSpace: "nowrap" }}>{w.fund}</div></div>
+    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, padding: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+        <span style={{ fontSize: 17, fontWeight: 800 }}>{bareCode(sym)}</span>
+        <span style={{ fontSize: 12, color: th.textDim, background: th.panelAlt, padding: "2px 9px", borderRadius: 999 }}>{idea.theme}</span>
+        <div style={{ flex: 1 }} />
+        <button className="ph-btn ph-primary" onClick={() => onAdd(sym)} style={primaryBtn(th)}><Plus size={14} /> 내 포트폴리오에 추가</button>
+        <button className="ph-btn" onClick={onClose} style={iconBtn(th)}>✕</button>
       </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {w.holdings.map((t) => (
-          <button key={t} className="ph-btn" onClick={() => onPick(t)} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 7, border: `1px solid ${th.border}`, background: th.panelAlt, color: th.text, cursor: "pointer" }}>{t}</button>
-        ))}
+      <p style={{ fontSize: 13, lineHeight: 1.7, color: th.text, margin: "6px 0 14px", minHeight: 22 }}>
+        {loading ? <span style={{ color: th.textFaint }}>설명을 불러오는 중…</span> : (desc || "이 종목에 대한 간단한 설명을 불러오지 못했어요. 아래 링크에서 자세히 확인하세요. (배포본은 AI 설명에 API 키가 필요합니다)")}
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <LinkBtn th={th} href={yahooUrl(sym)} color="#7c4dff">Yahoo Finance ↗</LinkBtn>
+        <LinkBtn th={th} href={tossUrl(sym)} color="#2d9cdb">토스증권 ↗</LinkBtn>
+        <LinkBtn th={th} href={redditUrl(sym)} color="#fc6e51">Reddit ↗</LinkBtn>
       </div>
     </div>
   );
 }
 
-function WhalePortfolios({ th, onPick }) {
+function WhaleCard({ th, w, onSelect, on }) {
   return (
-    <Panel th={th} title="부자들의 포트폴리오" sub="유명 투자자 대표 종목 (참고용) · 종목 클릭 시 추가">
+    <button className="ph-card" onClick={() => onSelect(w)} style={{ width: 234, padding: 16, borderRadius: 14, border: `1px solid ${on ? th.accent : th.border}`, background: th.panel, cursor: "pointer", textAlign: "left" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+        <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${w.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", flexShrink: 0 }}>{w.name.slice(0, 1)}</div>
+        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{w.name}</div><div style={{ fontSize: 11, color: th.textDim, whiteSpace: "nowrap" }}>{w.fund}</div></div>
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+        {w.holdings.slice(0, 4).map((x) => (<span key={x.t} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 7, background: th.panelAlt, color: th.textDim }}>{x.t}</span>))}
+      </div>
+    </button>
+  );
+}
+
+function WhalePortfolios({ th, onSelect, selected }) {
+  return (
+    <Panel th={th} title="부자들의 포트폴리오" sub="유명 투자자 (참고용) · 클릭하면 포트폴리오·공시">
       <Marquee duration={62}>
-        {WHALES.map((w, i) => <div key={i}><WhaleCard th={th} w={w} onPick={onPick} /></div>)}
+        {WHALES.map((w, i) => <div key={i}><WhaleCard th={th} w={w} onSelect={onSelect} on={selected && selected.name === w.name} /></div>)}
       </Marquee>
     </Panel>
+  );
+}
+
+function WhaleDetail({ th, whale, onClose, onAdd }) {
+  const data = whale.holdings.map((x) => ({ sector: x.t, value: x.w }));
+  const cmap = buildColorMap(data.map((d) => d.sector));
+  return (
+    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, padding: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <div style={{ width: 38, height: 38, borderRadius: "50%", background: `linear-gradient(135deg,${whale.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: "#fff" }}>{whale.name.slice(0, 1)}</div>
+        <div><div style={{ fontWeight: 800, fontSize: 15 }}>{whale.name}</div><div style={{ fontSize: 11.5, color: th.textDim }}>{whale.fund}</div></div>
+        <div style={{ flex: 1 }} />
+        <button className="ph-btn" onClick={onClose} style={iconBtn(th)}>✕</button>
+      </div>
+      <p style={{ fontSize: 13, lineHeight: 1.7, color: th.text, margin: "4px 0 12px" }}>{whale.desc}</p>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <div style={{ width: 180, height: 180, position: "relative" }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart><Pie data={data} dataKey="value" nameKey="sector" cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={2} stroke="none">{data.map((d) => <Cell key={d.sector} fill={cmap[d.sector]} />)}</Pie></PieChart>
+          </ResponsiveContainer>
+        </div>
+        <div style={{ flex: 1, minWidth: 180, display: "flex", flexDirection: "column", gap: 6 }}>
+          {data.map((d) => (
+            <button key={d.sector} className="ph-btn ph-legend" onClick={() => onAdd(d.sector)} title="내 포트폴리오에 추가" style={{ display: "flex", alignItems: "center", gap: 9, fontSize: 12.5, background: "transparent", border: "none", color: th.text, cursor: "pointer", padding: "3px 6px" }}>
+              <Dot c={cmap[d.sector]} /><span style={{ flex: 1, textAlign: "left", fontWeight: 600 }}>{d.sector}</span>
+              <span className="num" style={{ color: th.textDim }}>{d.value}%</span><Plus size={12} color={th.textFaint} />
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <LinkBtn th={th} href={edgarUrl(whale.q)} color="#2d9cdb">실제 13F 공시 (SEC EDGAR) ↗</LinkBtn>
+        <span style={{ fontSize: 11, color: th.textFaint }}>※ 종목·비중은 참고용 예시이며 최신 공시와 다를 수 있어요.</span>
+      </div>
+    </div>
   );
 }
 
@@ -955,26 +1097,38 @@ function GoalCard({ th, goal, setGoal, totalAssets, displayCur, conv }) {
  *  BENCHMARK (today's performance vs indices)                         *
  * ------------------------------------------------------------------ */
 function BenchmarkCard({ th, dayChange, benchmarks }) {
-  const rows = [{ label: "내 포트폴리오", v: dayChange, me: true }, ...BENCH.map((b) => ({ label: b.label, v: benchmarks[b.sym]?.chg ?? null }))];
-  const maxAbs = Math.max(1, ...rows.map((r) => Math.abs(r.v || 0)));
+  const data = [
+    { label: "내 포트폴리오", v: dayChange == null ? null : +dayChange.toFixed(2), me: true },
+    ...BENCH.map((b) => ({ label: b.label, v: benchmarks[b.sym]?.chg != null ? +benchmarks[b.sym].chg.toFixed(2) : null, me: false })),
+  ];
+  const hasData = data.some((d) => d.v != null);
+  const plot = data.map((d) => ({ ...d, v: d.v == null ? 0 : d.v, _null: d.v == null }));
   return (
-    <Panel th={th} title="벤치마크 대비" sub="오늘 변동률 비교">
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {rows.map((r, i) => {
-          const v = r.v, w = v == null ? 0 : (Math.abs(v) / maxAbs) * 50;
-          const c = v == null ? th.textFaint : v >= 0 ? th.heatPos : th.heatNeg;
-          return (
-            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-              <span style={{ width: 92, fontSize: 12.5, fontWeight: r.me ? 800 : 500, color: r.me ? th.text : th.textDim, flexShrink: 0 }}>{r.label}</span>
-              <div style={{ flex: 1, position: "relative", height: 18, background: th.inputBg, borderRadius: 5 }}>
-                <div style={{ position: "absolute", left: "50%", top: 0, bottom: 0, width: 1, background: th.border }} />
-                {v != null && <div style={{ position: "absolute", top: 3, bottom: 3, borderRadius: 3, background: c, ...(v >= 0 ? { left: "50%", width: `${w}%` } : { right: "50%", width: `${w}%` }) }} />}
-              </div>
-              <span className="num" style={{ width: 58, textAlign: "right", fontSize: 12.5, fontWeight: 700, color: c }}>{v == null ? "—" : `${v >= 0 ? "+" : ""}${fmt(v)}%`}</span>
-            </div>
-          );
-        })}
-      </div>
+    <Panel th={th} title="벤치마크 대비" sub="오늘 변동률 비교 (%)">
+      {hasData ? (
+        <div style={{ height: 230 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={plot} margin={{ top: 18, right: 6, left: -8, bottom: 0 }} barCategoryGap="28%">
+              <ReferenceLine y={0} stroke={th.border} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: th.textDim }} axisLine={{ stroke: th.border }} tickLine={false} interval={0} />
+              <YAxis tick={{ fontSize: 10, fill: th.textFaint }} axisLine={false} tickLine={false} width={34} tickFormatter={(v) => `${v}%`} />
+              <Tooltip cursor={{ fill: th.rowHover }} contentStyle={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, fontSize: 12, color: th.text }} labelStyle={{ color: th.textDim }} formatter={(v, n, p) => [p.payload._null ? "데이터 없음" : `${v >= 0 ? "+" : ""}${v}%`, "변동률"]} />
+              <Bar dataKey="v" radius={[5, 5, 0, 0]} isAnimationActive={false}
+                label={{ position: "top", fontSize: 11, fontWeight: 700, fill: th.textDim, formatter: (v) => (v === 0 ? "" : `${v > 0 ? "+" : ""}${v}%`) }}>
+                {plot.map((d, i) => {
+                  const c = d._null ? th.textFaint : d.me ? th.accent : d.v >= 0 ? th.heatPos : th.heatNeg;
+                  return <Cell key={i} fill={c} fillOpacity={d.me ? 1 : 0.85} />;
+                })}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      ) : (
+        <div style={{ height: 150, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13, textAlign: "center", lineHeight: 1.6 }}>
+          새로고침하면 내 포트폴리오와<br />S&P500·나스닥100·코스피의 오늘 변동률을<br />막대그래프로 비교해 드려요.
+        </div>
+      )}
+      <p style={{ fontSize: 11, color: th.textFaint, marginTop: 8 }}>파란 막대가 내 포트폴리오의 오늘 등락률입니다.</p>
     </Panel>
   );
 }
@@ -1075,3 +1229,28 @@ function ImportPanel({ th, onImport }) {
   );
 }
 const tabBtn = (th, on) => ({ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, border: `1px solid ${on ? "transparent" : th.border}`, background: on ? th.accent : "transparent", color: on ? "#fff" : th.textDim, fontWeight: 700, fontSize: 12, cursor: "pointer" });
+
+/* ------------------------------------------------------------------ *
+ *  TOP NAV (jump to sections)                                         *
+ * ------------------------------------------------------------------ */
+const NAV = [
+  ["sec-heatmap", "히트맵"],
+  ["sec-portfolio", "포트폴리오"],
+  ["sec-allocation", "섹터·현금"],
+  ["sec-goal", "목표·벤치마크"],
+  ["sec-trend", "자산추이"],
+  ["sec-ideas", "투자 아이디어"],
+  ["sec-whales", "부자들"],
+];
+function TopNav({ th }) {
+  const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  return (
+    <div style={{ position: "sticky", top: 63, zIndex: 15, background: th.bg, borderBottom: `1px solid ${th.border}` }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 12px", display: "flex", gap: 2, overflowX: "auto" }}>
+        {NAV.map(([id, label]) => (
+          <button key={id} className="navbtn" onClick={() => go(id)} style={{ flexShrink: 0, background: "transparent", border: "none", color: th.textDim, fontWeight: 700, fontSize: 13, padding: "11px 13px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{label}</button>
+        ))}
+      </div>
+    </div>
+  );
+}

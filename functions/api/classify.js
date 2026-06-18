@@ -7,10 +7,14 @@ const PROMPT = (symbol, name) =>
 티커: ${symbol}
 이름: ${name || "(미상)"}`;
 
+const DESC_PROMPT = (symbol, name) =>
+  `${symbol}(${name || ""}) 종목을 투자자 관점에서 2~3문장으로 아주 간단히 설명해줘. 무엇을 하는 회사/자산인지, 핵심 사업이나 투자 포인트를 한국어로. 마크다운 없이 평문으로만.`;
+
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   const headers = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json", "Cache-Control": "s-maxage=604800" };
   const symbol = url.searchParams.get("symbol") || "";
+  const mode = url.searchParams.get("mode") || "";
   const name = url.searchParams.get("name") || "";
   const key = context.env && context.env.ANTHROPIC_API_KEY;
   if (!symbol || !key) return new Response(JSON.stringify({ theme: null }), { headers });
@@ -18,11 +22,11 @@ export async function onRequest(context) {
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: 40, messages: [{ role: "user", content: PROMPT(symbol, name) }] }),
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: mode === "desc" ? 220 : 40, messages: [{ role: "user", content: (mode === "desc" ? DESC_PROMPT : PROMPT)(symbol, name) }] }),
     });
     const j = await r.json();
     const text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-    return new Response(JSON.stringify({ theme: text || null }), { headers });
+    return new Response(JSON.stringify(mode === "desc" ? { text: text || null } : { theme: text || null }), { headers });
   } catch {
     return new Response(JSON.stringify({ theme: null }), { headers });
   }
