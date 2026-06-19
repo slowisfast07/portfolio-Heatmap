@@ -497,6 +497,7 @@ export default function App() {
   const [capReturn, setCapReturn] = useState(25);
   const [showPct, setShowPct] = useState(true);
   const [labelMode, setLabelMode] = useState("ticker");
+  const [portfolioCollapsed, setPortfolioCollapsed] = useState(false);
   const [goal, setGoal] = useState(null);          // { amount, cur }
   const [snapshots, setSnapshots] = useState([]);   // [{ t: 'YYYY-MM-DD', v: USD }]
   const [benchmarks, setBenchmarks] = useState({}); // { '^GSPC': {chg}, ... }
@@ -527,6 +528,7 @@ export default function App() {
         if (x.capReturn != null) setCapReturn(x.capReturn);
         if (x.showPct != null) setShowPct(x.showPct);
         if (x.labelMode) setLabelMode(x.labelMode);
+        if (x.portfolioCollapsed != null) setPortfolioCollapsed(x.portfolioCollapsed);
       }
       setHydrated(true);
       track("app_open", { from: getSource() });
@@ -534,8 +536,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hydrated && !previewMode) persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } });
-  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, hydrated, previewMode]);
+    if (hydrated && !previewMode) persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed } });
+  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, hydrated, previewMode]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -830,19 +832,33 @@ export default function App() {
 
         {/* My portfolio */}
         <div id="sec-portfolio" className="sec">
-        <Panel th={th} title="내 포트폴리오" sub="티커만 넣으면 이름·섹터 자동 분류"
+        <Panel th={th} title="내 포트폴리오" sub={portfolioCollapsed ? `${holdings.filter((h) => h.ticker).length}개 종목 · 접힘` : "티커만 넣으면 이름·섹터 자동 분류"}
           right={
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="ph-btn" onClick={() => setShowImport((v) => !v)} style={{ ...secondaryBtn(th) }}><Upload size={14} /> 가져오기</button>
-              <button className="ph-btn ph-primary" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>
+              {!portfolioCollapsed && <>
+                <button className="ph-btn" onClick={() => setShowImport((v) => !v)} style={{ ...secondaryBtn(th) }}><Upload size={14} /> 가져오기</button>
+                <button className="ph-btn ph-primary" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>
+              </>}
+              <button className="ph-btn" onClick={() => setPortfolioCollapsed((v) => !v)} style={{ ...secondaryBtn(th) }} title={portfolioCollapsed ? "표 펼치기" : "표 접기"}>
+                {portfolioCollapsed ? "▾ 펼치기" : "▴ 접기"}
+              </button>
             </div>
           }>
-          {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
-          <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} />
-          <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
-            티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표(RSI·볼린저) 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다.
-            <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다.
-          </p>
+          {portfolioCollapsed ? (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 2px", fontSize: 13, color: th.textDim, flexWrap: "wrap" }}>
+              <span>입력한 종목 <b style={{ color: th.text }}>{holdings.filter((h) => h.ticker).length}개</b>는 위 히트맵·섹터 비중에 그대로 반영돼요.</span>
+              <button className="ph-btn" onClick={() => setPortfolioCollapsed(false)} style={{ background: "transparent", border: "none", color: th.accent, fontWeight: 700, cursor: "pointer", padding: 0 }}>편집하려면 펼치기 →</button>
+            </div>
+          ) : (
+            <>
+              {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
+              <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} />
+              <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
+                티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표(RSI·볼린저) 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다.
+                <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다. 다 넣은 뒤엔 <b style={{ color: th.textDim }}>▴ 접기</b>로 깔끔하게 정리하세요.
+              </p>
+            </>
+          )}
         </Panel>
         </div>
 
