@@ -1218,38 +1218,47 @@ const selStyle = (th, w) => ({ width: w, background: th.inputBg, border: `1px so
 /* ------------------------------------------------------------------ *
  *  CAROUSELS (auto-scroll, therich.io style)                          *
  * ------------------------------------------------------------------ */
-function Carousel({ th, children, speed = 0.45 }) {
-  const ref = useRef(null);
+function Carousel({ th, children, speed = 0.5 }) {
+  const trackRef = useRef(null);
+  const groupRef = useRef(null);
+  const offRef = useRef(0);
   const pausedRef = useRef(false);
+  const apply = () => { if (trackRef.current) trackRef.current.style.transform = `translateX(${-offRef.current}px)`; };
   useEffect(() => {
-    const el = ref.current; if (!el) return;
     let raf;
     const step = () => {
-      if (el && !pausedRef.current) {
-        el.scrollLeft += speed;
-        const half = el.scrollWidth / 2;
-        if (half > 0 && el.scrollLeft >= half) el.scrollLeft -= half;
+      const g = groupRef.current; const loop = g ? g.offsetWidth + 12 : 0;
+      if (!pausedRef.current) {
+        offRef.current += speed;
+        if (loop > 0 && offRef.current >= loop) offRef.current -= loop;
+        apply();
       }
       raf = requestAnimationFrame(step);
     };
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [speed]);
-  const nudge = (dir) => { const el = ref.current; if (el) el.scrollBy({ left: dir * 300, behavior: "smooth" }); };
+  const nudge = (dir) => {
+    const g = groupRef.current; const loop = g ? g.offsetWidth + 12 : 0;
+    offRef.current += dir * 300;
+    if (loop > 0) { while (offRef.current < 0) offRef.current += loop; while (offRef.current >= loop) offRef.current -= loop; }
+    if (trackRef.current) { trackRef.current.style.transition = "transform .35s ease"; apply(); setTimeout(() => { if (trackRef.current) trackRef.current.style.transition = "none"; }, 360); }
+  };
   const arrow = (dir) => ({
-    position: "absolute", top: "50%", transform: "translateY(-50%)", [dir < 0 ? "left" : "right"]: 4, zIndex: 5,
+    position: "absolute", top: "50%", transform: "translateY(-50%)", [dir < 0 ? "left" : "right"]: 2, zIndex: 5,
     width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center", cursor: "pointer",
-    background: th.panel, border: `1px solid ${th.border}`, color: th.text, fontSize: 17, fontWeight: 700,
-    boxShadow: th.cardShadow,
+    background: th.panel, border: `1px solid ${th.border}`, color: th.text, fontSize: 17, fontWeight: 700, boxShadow: th.cardShadow,
   });
   return (
     <div style={{ position: "relative" }}
       onMouseEnter={() => (pausedRef.current = true)} onMouseLeave={() => (pausedRef.current = false)}
-      onTouchStart={() => (pausedRef.current = true)}>
+      onTouchStart={() => (pausedRef.current = true)} onTouchEnd={() => (pausedRef.current = false)}>
       <button aria-label="이전" className="navbtn" onClick={() => nudge(-1)} style={arrow(-1)}>‹</button>
-      <div ref={ref} className="cax" style={{ display: "flex", gap: 12, overflowX: "auto", padding: "2px 40px", scrollbarWidth: "none" }}>
-        <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>{children}</div>
-        <div style={{ display: "flex", gap: 12, flexShrink: 0 }} aria-hidden="true">{children}</div>
+      <div style={{ overflow: "hidden", padding: "2px 42px", WebkitMaskImage: "linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)", maskImage: "linear-gradient(90deg,transparent,#000 4%,#000 96%,transparent)" }}>
+        <div ref={trackRef} style={{ display: "flex", gap: 12, width: "max-content", willChange: "transform" }}>
+          <div ref={groupRef} style={{ display: "flex", gap: 12 }}>{children}</div>
+          <div style={{ display: "flex", gap: 12 }} aria-hidden="true">{children}</div>
+        </div>
       </div>
       <button aria-label="다음" className="navbtn" onClick={() => nudge(1)} style={arrow(1)}>›</button>
     </div>
