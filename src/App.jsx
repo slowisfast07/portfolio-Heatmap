@@ -7,6 +7,52 @@ import {
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ *
+ *  MVP CONFIG  (edit these few lines for your launch)                 *
+ * ------------------------------------------------------------------ */
+const CONFIG = {
+  feedbackEmail: "albert_song@snu.ac.kr",
+  productName: "나만의 포트폴리오 히트맵",
+  siteUrl: "https://portfolio-heatmap-nine.vercel.app",
+};
+
+/* which channel did this visitor come from? (?from=reddit / utm_source=...) */
+function getSource() {
+  try { const p = new URLSearchParams(window.location.search); return p.get("from") || p.get("utm_source") || "direct"; }
+  catch { return "direct"; }
+}
+
+/* privacy-friendly event tracking — fires only if Plausible / Vercel / GA is loaded.
+   Safe no-op otherwise, so it never breaks anything. */
+function track(event, props) {
+  try {
+    if (typeof window === "undefined") return;
+    if (window.plausible) window.plausible(event, props ? { props } : undefined);
+    if (window.va) window.va("event", { name: event, ...(props || {}) });
+    if (window.gtag) window.gtag("event", event, props || {});
+  } catch { /* ignore */ }
+}
+
+/* demo portfolio for the "예시로 둘러보기" button (reduces empty-state bounce) */
+const SAMPLE_HOLDINGS = [
+  { type: "us", ticker: "NVDA", name: "NVIDIA", sector: "AI 반도체", qty: 10, avgCost: 120, cur: "USD" },
+  { type: "us", ticker: "MSFT", name: "Microsoft", sector: "소프트웨어", qty: 5, avgCost: 380, cur: "USD" },
+  { type: "us", ticker: "MU", name: "Micron", sector: "메모리/반도체", qty: 15, avgCost: 95, cur: "USD" },
+  { type: "kr", ticker: "005930.KS", name: "삼성전자", sector: "메모리/반도체", qty: 50, avgCost: 70000, cur: "KRW" },
+  { type: "crypto", ticker: "BTC", name: "Bitcoin", sector: "Crypto", qty: 0.2, avgCost: 60000, cur: "USD" },
+];
+
+/* feedback / waitlist — POSTs to /api/feedback (forwards to your webhook).
+   Falls back to the user's email client if no backend/endpoint is configured. */
+async function submitFeedback(payload) {
+  try {
+    const r = await fetch("/api/feedback", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) });
+    if (r.ok) { const j = await r.json(); if (j.ok) return { ok: true }; }
+  } catch { /* fall through */ }
+  return { ok: false };
+}
+
+
+/* ------------------------------------------------------------------ *
  *  THEME  (Polymarket-inspired: slate #15191d + blue #2d9cdb)         *
  * ------------------------------------------------------------------ */
 const THEMES = {
@@ -459,6 +505,8 @@ export default function App() {
   const [selectedIdea, setSelectedIdea] = useState(null);
   const [selectedWhale, setSelectedWhale] = useState(null);
   const [stockModal, setStockModal] = useState(null); // {key, ticker, name} for mini chart
+  const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -478,6 +526,7 @@ export default function App() {
         if (x.labelMode) setLabelMode(x.labelMode);
       }
       setHydrated(true);
+      track("app_open", { from: getSource() });
     })();
   }, []);
 
@@ -569,7 +618,12 @@ export default function App() {
     return Object.entries(m).map(([sector, value]) => ({ sector, value, pct: tot ? (value / tot) * 100 : 0 })).sort((a, b) => b.value - a.value);
   }, [leaves]);
 
-  const addHolding = () => setHoldings((p) => [...p, { id: uid(), type: "us", ticker: "", name: "", sector: "Technology", qty: 0, avgCost: null, buyDate: null, price: null, cur: "USD", chg: null, live: false }]);
+  const addHolding = () => { setHoldings((p) => [...p, { id: uid(), type: "us", ticker: "", name: "", sector: "Technology", qty: 0, avgCost: null, buyDate: null, price: null, cur: "USD", chg: null, live: false }]); track("add_holding"); };
+  const loadSample = useCallback(() => {
+    setHoldings(SAMPLE_HOLDINGS.map((h) => ({ id: uid(), ...h, buyDate: null, price: null, chg: null, live: false })));
+    setCash([{ id: uid(), label: "예수금", cur: "USD", amount: 3000 }]);
+    track("load_sample");
+  }, []);
   const updateHolding = (id, patch) => setHoldings((p) => p.map((h) => (h.id === id ? { ...h, ...patch } : h)));
   const removeHolding = (id) => setHoldings((p) => p.filter((h) => h.id !== id));
 
@@ -703,7 +757,7 @@ export default function App() {
       <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "16px 22px", borderBottom: `1px solid ${th.border}`, background: th.bg, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: "linear-gradient(135deg,#2d9cdb,#9b5de5)", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 17, color: "#fff", boxShadow: "0 2px 10px rgba(45,156,219,.4)" }}>P</div>
-          <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>Portfolio</div>
+          <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>{CONFIG.productName}</div>
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ textAlign: "right", marginRight: 6 }}>
@@ -738,6 +792,9 @@ export default function App() {
 
       {/* BODY */}
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
+        {!welcomeDismissed && holdings.every((h) => !h.ticker) && !cash.length && (
+          <WelcomeBanner th={th} onSample={loadSample} onAdd={addHolding} onClose={() => setWelcomeDismissed(true)} />
+        )}
         {/* Heatmap — full width */}
         <div id="sec-heatmap" className="sec">
         <Panel th={th} title="Heatmap" glow
@@ -787,15 +844,18 @@ export default function App() {
 
         {/* recommendations */}
         <div id="sec-ideas" className="sec">
-          <ThemeIdeas th={th} ideas={ideas} onSelect={setSelectedIdea} selected={selectedIdea} />
+          <ThemeIdeas th={th} ideas={ideas} onSelect={(it) => { setSelectedIdea(it); track("view_idea", { ticker: it.ticker }); }} selected={selectedIdea} />
           {selectedIdea && <IdeaDetail th={th} idea={selectedIdea} onClose={() => setSelectedIdea(null)} onAdd={addAndFill} />}
         </div>
         <div id="sec-whales" className="sec">
-          <WhalePortfolios th={th} onSelect={setSelectedWhale} selected={selectedWhale} />
+          <WhalePortfolios th={th} onSelect={(w) => { setSelectedWhale(w); track("view_whale", { name: w.name }); }} selected={selectedWhale} />
           {selectedWhale && <WhaleDetail th={th} whale={selectedWhale} onClose={() => setSelectedWhale(null)} onAdd={addAndFill} />}
         </div>
       </div>
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
+      <button className="ph-btn ph-primary" onClick={() => { setFeedbackOpen(true); track("feedback_open"); }} title="의견 보내기"
+        style={{ position: "fixed", right: 18, bottom: 18, zIndex: 70, ...primaryBtn(th), padding: "11px 16px", borderRadius: 999, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>💬 의견</button>
+      {feedbackOpen && <FeedbackModal th={th} onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
 }
@@ -1587,6 +1647,79 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  MVP: welcome banner + feedback/waitlist modal                      *
+ * ------------------------------------------------------------------ */
+function WelcomeBanner({ th, onSample, onAdd, onClose }) {
+  return (
+    <div style={{ position: "relative", borderRadius: 16, padding: "22px 22px", border: `1px solid ${th.border}`, background: `linear-gradient(120deg, ${th.panel}, ${th.panelAlt})`, overflow: "hidden" }}>
+      <div style={{ position: "absolute", right: -40, top: -40, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(45,156,219,.25), transparent 70%)" }} />
+      <button className="ph-btn" onClick={onClose} style={{ ...iconBtn(th), position: "absolute", right: 12, top: 12 }}>✕</button>
+      <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: -0.4, marginBottom: 6 }}>내 모든 자산을 한 화면에 👋</div>
+      <p style={{ fontSize: 13.5, color: th.textDim, lineHeight: 1.7, maxWidth: 620, margin: "0 0 16px" }}>
+        미국·한국 주식과 코인을 넣으면 <b style={{ color: th.text }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
+        티커만 입력하면 이름·섹터·시세가 알아서 채워집니다. 처음이라면 예시로 먼저 둘러보세요.
+      </p>
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+        <button className="ph-btn ph-primary" onClick={onSample} style={primaryBtn(th)}>✨ 예시로 둘러보기</button>
+        <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={secondaryBtn(th)}><Plus size={15} /> 내 종목 추가</button>
+      </div>
+    </div>
+  );
+}
+
+function FeedbackModal({ th, onClose }) {
+  const [msg, setMsg] = useState("");
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState("idle"); // idle | sending | done
+  const send = async () => {
+    if (!msg.trim() && !email.trim()) { onClose(); return; }
+    setState("sending");
+    const meta = { url: typeof location !== "undefined" ? location.href : "", from: getSource(), ua: typeof navigator !== "undefined" ? navigator.userAgent : "" };
+    const r = await submitFeedback({ type: email && !msg ? "waitlist" : "feedback", message: msg, email, meta });
+    track("feedback_submit", { hasEmail: !!email });
+    if (r.ok) { setState("done"); return; }
+    // fallback: open the user's email client
+    const subject = encodeURIComponent(`[${CONFIG.productName}] 의견`);
+    const body = encodeURIComponent(`${msg}\n\n(연락처: ${email || "-"})`);
+    window.location.href = `mailto:${CONFIG.feedbackEmail}?subject=${subject}&body=${body}`;
+    setState("done");
+  };
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(440px,100%)", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
+          <span style={{ fontSize: 16, fontWeight: 800 }}>의견 보내기</span>
+          <div style={{ flex: 1 }} />
+          <button className="ph-btn" onClick={onClose} style={iconBtn(th)}>✕</button>
+        </div>
+        {state === "done" ? (
+          <div style={{ padding: "20px 0", textAlign: "center" }}>
+            <div style={{ fontSize: 30, marginBottom: 8 }}>🙏</div>
+            <div style={{ fontSize: 14, color: th.text, fontWeight: 700, marginBottom: 4 }}>의견 감사합니다!</div>
+            <div style={{ fontSize: 12.5, color: th.textDim }}>보내주신 내용은 다음 업데이트에 큰 도움이 돼요.</div>
+            <button className="ph-btn ph-primary" onClick={onClose} style={{ ...primaryBtn(th), margin: "16px auto 0" }}>닫기</button>
+          </div>
+        ) : (
+          <>
+            <p style={{ fontSize: 12.5, color: th.textDim, lineHeight: 1.6, margin: "4px 0 12px" }}>
+              필요한 기능, 불편한 점, 무엇이든 적어주세요. 이메일을 남기면 업데이트·정식 출시 소식을 알려드려요(선택).
+            </p>
+            <textarea value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="예: 배당 캘린더가 있으면 좋겠어요 / 표가 모바일에서 좁아요 / 이런 기능 원해요…"
+              style={{ width: "100%", minHeight: 110, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 10, padding: 11, fontSize: 13, fontFamily: "inherit", resize: "vertical", marginBottom: 10 }} />
+            <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="이메일 (선택 · 출시 알림 받기)" type="email"
+              style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 10, padding: "10px 11px", fontSize: 13, marginBottom: 14 }} />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+              <button className="ph-btn" onClick={onClose} style={secondaryBtn(th)}>취소</button>
+              <button className="ph-btn ph-primary" onClick={send} disabled={state === "sending"} style={{ ...primaryBtn(th), opacity: state === "sending" ? 0.6 : 1 }}>{state === "sending" ? "보내는 중…" : "보내기"}</button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
