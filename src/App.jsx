@@ -490,6 +490,7 @@ export default function App() {
   const [fxLive, setFxLive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [savedAt, setSavedAt] = useState(null);
   const [hydrated, setHydrated] = useState(false);
 
   const [heatMode, setHeatMode] = useState("change");
@@ -536,7 +537,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hydrated && !previewMode) persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed } });
+    if (hydrated && !previewMode) { persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed } }); setSavedAt(Date.now()); }
   }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, hydrated, previewMode]);
 
   const refresh = useCallback(async () => {
@@ -548,7 +549,7 @@ export default function App() {
     const metricSyms = [...stockSyms, ...cryptoSyms.map((s) => `${s}-USD`)];
     const benchSyms = ["^GSPC", "^NDX", "^KS11"];
     const [cryptoData, stockData, bench, hist] = await Promise.all([
-      fetchCrypto(cryptoSyms), fetchStocks(stockSyms), fetchStocks(benchSyms), fetchHistory([...metricSyms, ...benchSyms]),
+      fetchCrypto(cryptoSyms), fetchStocks(stockSyms), fetchStocks(benchSyms), fetchHistory([...metricSyms, ...benchSyms, "KRW=X"]),
     ]);
     setBenchmarks(bench || {});
     setHistMap(hist || {});
@@ -681,6 +682,43 @@ export default function App() {
   const ideas = useMemo(() => buildIdeas(sectorData, heldSet), [sectorData, heldSet]);
   const perfSeries = useMemo(() => buildPerf(histMap, holdings, rate), [histMap, holdings, rate]);
 
+  /* per-holding weights by cost basis vs current value (#4) */
+  const weightRows = useMemo(() => {
+    const tCost = holdings.reduce((s, h) => s + costOf(h), 0);
+    const tVal = holdings.reduce((s, h) => s + valueOf(h), 0);
+    return holdings.filter((h) => h.ticker && (valueOf(h) > 0 || costOf(h) > 0)).map((h) => ({
+      id: h.id, ticker: h.ticker, name: h.name,
+      costW: tCost ? (costOf(h) / tCost) * 100 : 0,
+      valW: tVal ? (valueOf(h) / tVal) * 100 : 0,
+    })).sort((a, b) => b.valW - a.valW);
+  }, [holdings, costOf, valueOf]);
+
+  /* FX gain/loss in display currency (#3) — needs 매수일 + 평단가 on foreign holdings */
+  const fxPnl = useMemo(() => {
+    const fxHist = histMap["KRW=X"]; // USD/KRW history
+    const fAt = (cur, ts) => {
+      if (cur === displayCur) return 1;
+      const usdkrw = ts == null ? rate : (closeAt(fxHist, ts) || rate);
+      if (cur === "USD" && displayCur === "KRW") return usdkrw;
+      if (cur === "KRW" && displayCur === "USD") return 1 / usdkrw;
+      return null;
+    };
+    let priceP = 0, fxP = 0, n = 0, skipped = 0;
+    holdings.forEach((h) => {
+      const qty = Number(h.qty) || 0;
+      if (!qty || h.avgCost == null || h.price == null) return;
+      if (h.cur === displayCur) return;
+      if (!h.buyDate) { skipped++; return; }
+      const buyTs = Math.floor(new Date(h.buyDate + "T00:00:00Z").getTime() / 1000);
+      const fNow = fAt(h.cur, null), fBuy = fAt(h.cur, buyTs);
+      if (fNow == null || fBuy == null) { skipped++; return; }
+      priceP += qty * (h.price - h.avgCost) * fNow;
+      fxP += qty * h.avgCost * (fNow - fBuy);
+      n++;
+    });
+    return { priceP, fxP, total: priceP + fxP, n, skipped, hasFxHist: !!fxHist };
+  }, [holdings, histMap, rate, displayCur]);
+
   /* backup / restore (#14) */
   const exportData = useCallback(() => {
     const payload = { version: 2, exportedAt: new Date().toISOString(), holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } };
@@ -758,7 +796,7 @@ export default function App() {
         .ph-legend{transition:background .12s;border-radius:7px;} .ph-legend:hover{background:${th.rowHover};}
         @keyframes mqscroll{from{transform:translateX(0)}to{transform:translateX(-50%)}}
         .mq-track{animation-name:mqscroll;animation-timing-function:linear;animation-iteration-count:infinite;}
-        .mq:hover .mq-track{animation-play-state:paused;}
+        .mq:hover .mq-track{animation-play-state:paused;} .cax::-webkit-scrollbar{display:none;}
         .sec{scroll-margin-top:118px;}
         .navbtn{transition:all .15s;cursor:pointer;} .navbtn:hover{color:${th.text};background:${th.panelAlt};}
         ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:${th.border};border-radius:4px;}
@@ -794,6 +832,8 @@ export default function App() {
         </span>
         <span style={{ color: th.textFaint }}>·</span>
         <span>업데이트 {lastUpdate ? lastUpdate.toLocaleTimeString() : "—"} <span style={{ color: th.textFaint }}>(60초마다 자동)</span></span>
+        {savedAt && !previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.heatPos }}>✓ 자동 저장됨</span></>}
+        {previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.textFaint }}>미리보기(저장 안 됨)</span></>}
         <div style={{ flex: 1 }} />
         <button className="ph-btn navbtn" onClick={exportData} title="모든 데이터를 JSON 파일로 저장" style={{ background: "transparent", border: "none", color: th.textDim, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "3px 7px", borderRadius: 6 }}>⤓ 백업</button>
         <label className="navbtn" title="JSON 백업 파일에서 복원" style={{ color: th.textDim, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "3px 7px", borderRadius: 6 }}>⤒ 복원
@@ -869,6 +909,12 @@ export default function App() {
           <Panel th={th} title="섹터별 자산 비중" sub={`${sectorData.length}개 구성`}>
             <Donut data={sectorData} th={th} colorMap={colorMap} />
           </Panel>
+        </div>
+
+        {/* per-holding weights + FX P&L */}
+        <div className="ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+          <WeightCard th={th} rows={weightRows} />
+          <FxCard th={th} fx={fxPnl} displayCur={displayCur} />
         </div>
 
         {/* goal + benchmark */}
@@ -1086,7 +1132,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
             const v = valueOf(h), wpct = totalAssets ? (v / totalAssets) * 100 : 0, ret = returnPct(h);
             return (
               <tr key={h.id} className="ph-row">
-                <td style={cell}><select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 62)}><option value="us">미국</option><option value="kr">한국</option><option value="crypto">크립토</option></select></td>
+                <td style={cell}><select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 62)}><option value="us">미국</option><option value="kr">한국</option><option value="etf">ETF</option><option value="crypto">크립토</option></select></td>
                 <td style={cell}><TickerInput th={th} value={h.ticker} type={h.type} width={92} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : "AAPL"}
                   onText={(val) => onUpdate(h.id, { ticker: val, live: false })}
                   onPick={(sym) => { const s = (sym || h.ticker || "").toUpperCase(); if (s !== h.ticker) onUpdate(h.id, { ticker: s, live: false }); onAutoFill(h.id, s, h.type); }} /></td>
@@ -1172,12 +1218,40 @@ const selStyle = (th, w) => ({ width: w, background: th.inputBg, border: `1px so
 /* ------------------------------------------------------------------ *
  *  CAROUSELS (auto-scroll, therich.io style)                          *
  * ------------------------------------------------------------------ */
-function Marquee({ children, duration = 40 }) {
+function Carousel({ th, children, speed = 0.45 }) {
+  const ref = useRef(null);
+  const pausedRef = useRef(false);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    let raf;
+    const step = () => {
+      if (el && !pausedRef.current) {
+        el.scrollLeft += speed;
+        const half = el.scrollWidth / 2;
+        if (half > 0 && el.scrollLeft >= half) el.scrollLeft -= half;
+      }
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [speed]);
+  const nudge = (dir) => { const el = ref.current; if (el) el.scrollBy({ left: dir * 300, behavior: "smooth" }); };
+  const arrow = (dir) => ({
+    position: "absolute", top: "50%", transform: "translateY(-50%)", [dir < 0 ? "left" : "right"]: 4, zIndex: 5,
+    width: 34, height: 34, borderRadius: "50%", display: "grid", placeItems: "center", cursor: "pointer",
+    background: th.panel, border: `1px solid ${th.border}`, color: th.text, fontSize: 17, fontWeight: 700,
+    boxShadow: th.cardShadow,
+  });
   return (
-    <div className="mq" style={{ overflow: "hidden", position: "relative", WebkitMaskImage: "linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent)", maskImage: "linear-gradient(90deg,transparent,#000 3%,#000 97%,transparent)" }}>
-      <div className="mq-track" style={{ display: "flex", gap: 12, width: "max-content", animationDuration: `${duration}s` }}>
-        {children}{children}
+    <div style={{ position: "relative" }}
+      onMouseEnter={() => (pausedRef.current = true)} onMouseLeave={() => (pausedRef.current = false)}
+      onTouchStart={() => (pausedRef.current = true)}>
+      <button aria-label="이전" className="navbtn" onClick={() => nudge(-1)} style={arrow(-1)}>‹</button>
+      <div ref={ref} className="cax" style={{ display: "flex", gap: 12, overflowX: "auto", padding: "2px 40px", scrollbarWidth: "none" }}>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0 }}>{children}</div>
+        <div style={{ display: "flex", gap: 12, flexShrink: 0 }} aria-hidden="true">{children}</div>
       </div>
+      <button aria-label="다음" className="navbtn" onClick={() => nudge(1)} style={arrow(1)}>›</button>
     </div>
   );
 }
@@ -1186,7 +1260,7 @@ function ThemeIdeas({ th, ideas, onSelect, selected }) {
   if (!ideas.length) return null;
   return (
     <Panel th={th} title="투자 아이디어" sub="나에게 맞는 테마주는? · 클릭하면 설명·링크">
-      <Marquee duration={46}>
+      <Carousel th={th}>
         {ideas.map((it, i) => {
           const grad = i % 4 === 3, on = selected && selected.ticker === it.ticker;
           return (
@@ -1197,7 +1271,7 @@ function ThemeIdeas({ th, ideas, onSelect, selected }) {
             </button>
           );
         })}
-      </Marquee>
+      </Carousel>
     </Panel>
   );
 }
@@ -1253,9 +1327,9 @@ function WhaleCard({ th, w, onSelect, on }) {
 function WhalePortfolios({ th, onSelect, selected }) {
   return (
     <Panel th={th} title="부자들의 포트폴리오" sub="유명 투자자 (참고용) · 클릭하면 포트폴리오·공시">
-      <Marquee duration={62}>
+      <Carousel th={th} speed={0.35}>
         {WHALES.map((w, i) => <div key={i}><WhaleCard th={th} w={w} onSelect={onSelect} on={selected && selected.name === w.name} /></div>)}
-      </Marquee>
+      </Carousel>
     </Panel>
   );
 }
@@ -1667,7 +1741,7 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                   onText={(val) => onUpdate(h.id, { ticker: val, live: false })}
                   onPick={(sym) => { const s = (sym || h.ticker || "").toUpperCase(); if (s !== h.ticker) onUpdate(h.id, { ticker: s, live: false }); onAutoFill(h.id, s, h.type); }} />
               </div>
-              <select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 70)}><option value="us">미국</option><option value="kr">한국</option><option value="crypto">크립토</option></select>
+              <select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 70)}><option value="us">미국</option><option value="kr">한국</option><option value="etf">ETF</option><option value="crypto">크립토</option></select>
               <button className="ph-btn" onClick={() => onRemove(h.id)} style={{ ...iconBtn(th), width: 30, height: 30, color: th.heatNeg }}><Trash2 size={14} /></button>
             </div>
             <input value={h.name} placeholder="이름 (자동)" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={{ ...inpStyle(th, 0), width: "100%", marginBottom: 8 }} />
@@ -1763,5 +1837,71 @@ function FeedbackModal({ th, onClose }) {
         )}
       </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  PER-HOLDING WEIGHTS (cost vs value)  +  FX P&L                      *
+ * ------------------------------------------------------------------ */
+function WeightCard({ th, rows }) {
+  if (!rows.length) return (
+    <Panel th={th} title="종목별 비중" sub="원금 기준 · 평가액 기준">
+      <div style={{ height: 90, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13 }}>종목과 수량·평단가를 입력하면 비중이 표시돼요.</div>
+    </Panel>
+  );
+  return (
+    <Panel th={th} title="종목별 비중" sub="원금(평단가) 기준 · 평가액(현재가) 기준">
+      <div style={{ display: "flex", gap: 10, fontSize: 10.5, color: th.textFaint, fontWeight: 700, padding: "0 2px 6px" }}>
+        <span style={{ width: 88 }}>종목</span>
+        <span style={{ flex: 1 }}>원금 비중</span>
+        <span style={{ flex: 1 }}>평가액 비중</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9, maxHeight: 280, overflowY: "auto" }}>
+        {rows.map((r) => (
+          <div key={r.id} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+            <span className="num" style={{ width: 88, fontWeight: 700, fontSize: 12.5, color: th.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }} title={r.name || r.ticker}>{bareCode(r.ticker)}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ height: 14, borderRadius: 4, background: th.inputBg, overflow: "hidden" }}><div style={{ width: `${r.costW}%`, height: "100%", background: th.textDim, opacity: 0.6 }} /></div>
+              <span className="num" style={{ fontSize: 10.5, color: th.textDim }}>{fmt(r.costW, 1)}%</span>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ height: 14, borderRadius: 4, background: th.inputBg, overflow: "hidden" }}><div style={{ width: `${r.valW}%`, height: "100%", background: th.accent }} /></div>
+              <span className="num" style={{ fontSize: 10.5, color: th.accent, fontWeight: 700 }}>{fmt(r.valW, 1)}%</span>
+            </div>
+          </div>
+        ))}
+      </div>
+      <p style={{ fontSize: 11, color: th.textFaint, marginTop: 10 }}>회색=내가 넣은 원금 기준, 파랑=현재 평가액 기준 비중이에요.</p>
+    </Panel>
+  );
+}
+
+function FxCard({ th, fx, displayCur }) {
+  const has = fx.n > 0;
+  const row = (label, v, strong) => (
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderTop: strong ? `1px solid ${th.border}` : "none" }}>
+      <span style={{ fontSize: strong ? 13 : 12.5, fontWeight: strong ? 800 : 600, color: strong ? th.text : th.textDim }}>{label}</span>
+      <span className="num" style={{ fontSize: strong ? 14.5 : 13, fontWeight: 800, color: v == null ? th.textFaint : v >= 0 ? th.heatPos : th.heatNeg }}>{v == null ? "—" : `${v >= 0 ? "+" : ""}${fmtMoney(v, displayCur)}`}</span>
+    </div>
+  );
+  return (
+    <Panel th={th} title="환차손익" sub={`해외 종목 손익을 주가 vs 환율로 분해 (${displayCur} 기준)`}>
+      {has ? (
+        <>
+          {row("주가 손익", fx.priceP)}
+          {row("환차 손익", fx.fxP)}
+          {row("합계", fx.total, true)}
+          <p style={{ fontSize: 11, color: th.textFaint, marginTop: 10, lineHeight: 1.6 }}>
+            매수일·평단가가 입력된 해외 종목 <b style={{ color: th.textDim }}>{fx.n}개</b> 기준이에요.
+            {fx.skipped > 0 && <> 매수일이 없는 {fx.skipped}개는 빠졌어요 — 표에서 <b style={{ color: th.textDim }}>매수일</b>을 넣으면 포함됩니다.</>}
+          </p>
+        </>
+      ) : (
+        <div style={{ height: 120, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 12.5, textAlign: "center", lineHeight: 1.7 }}>
+          해외 종목(예: 미국주식)에 <b style={{ color: th.textDim }}>매수일·평단가</b>를 넣으면<br />주가로 번 돈과 환율로 번 돈을 나눠서 보여드려요.
+          {!fx.hasFxHist && <><br /><span style={{ color: th.textFaint }}>(환율 데이터 로딩 중일 수 있어요 — 새로고침 후 표시)</span></>}
+        </div>
+      )}
+    </Panel>
   );
 }
