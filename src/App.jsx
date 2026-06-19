@@ -506,6 +506,9 @@ export default function App() {
   const [selectedWhale, setSelectedWhale] = useState(null);
   const [stockModal, setStockModal] = useState(null); // {key, ticker, name} for mini chart
   const [welcomeDismissed, setWelcomeDismissed] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [preBackup, setPreBackup] = useState(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
 
   useEffect(() => {
@@ -531,8 +534,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hydrated) persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } });
-  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, hydrated]);
+    if (hydrated && !previewMode) persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } });
+  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, hydrated, previewMode]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -620,10 +623,19 @@ export default function App() {
 
   const addHolding = () => { setHoldings((p) => [...p, { id: uid(), type: "us", ticker: "", name: "", sector: "Technology", qty: 0, avgCost: null, buyDate: null, price: null, cur: "USD", chg: null, live: false }]); track("add_holding"); };
   const loadSample = useCallback(() => {
+    setPreBackup((prev) => prev || { holdings, cash }); // remember the user's real data (once)
     setHoldings(SAMPLE_HOLDINGS.map((h) => ({ id: uid(), ...h, buyDate: null, price: null, chg: null, live: false })));
     setCash([{ id: uid(), label: "예수금", cur: "USD", amount: 3000 }]);
+    setPreviewMode(true);
+    setShowWelcome(false); setWelcomeDismissed(true);
     track("load_sample");
-  }, []);
+  }, [holdings, cash]);
+
+  const exitPreview = useCallback(() => {
+    if (preBackup) { setHoldings(preBackup.holdings); setCash(preBackup.cash); }
+    setPreBackup(null); setPreviewMode(false);
+    track("exit_preview");
+  }, [preBackup]);
   const updateHolding = (id, patch) => setHoldings((p) => p.map((h) => (h.id === id ? { ...h, ...patch } : h)));
   const removeHolding = (id) => setHoldings((p) => p.filter((h) => h.id !== id));
 
@@ -788,12 +800,22 @@ export default function App() {
       </div>
 
       {/* NAV */}
-      <TopNav th={th} />
+      <TopNav th={th} onHelp={() => { setShowWelcome(true); setWelcomeDismissed(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
 
       {/* BODY */}
       <div style={{ maxWidth: 1280, margin: "0 auto", padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
-        {!welcomeDismissed && holdings.every((h) => !h.ticker) && !cash.length && (
-          <WelcomeBanner th={th} onSample={loadSample} onAdd={addHolding} onClose={() => setWelcomeDismissed(true)} />
+        {previewMode && (
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 12, border: `1px solid ${th.accent}`, background: th.panelAlt }}>
+            <span style={{ fontSize: 18 }}>👀</span>
+            <div style={{ flex: 1, minWidth: 180 }}>
+              <div style={{ fontWeight: 700, fontSize: 13.5 }}>예시 데이터를 둘러보는 중이에요</div>
+              <div style={{ fontSize: 12, color: th.textDim }}>샘플이라 저장되지 않아요. 돌아가면 원래 내 데이터가 그대로 있어요.</div>
+            </div>
+            <button className="ph-btn ph-primary" onClick={exitPreview} style={primaryBtn(th)}>← 내 데이터로 돌아가기</button>
+          </div>
+        )}
+        {(showWelcome || (!welcomeDismissed && holdings.every((h) => !h.ticker) && !cash.length)) && (
+          <WelcomeBanner th={th} onSample={loadSample} onAdd={addHolding} onClose={() => { setWelcomeDismissed(true); setShowWelcome(false); }} />
         )}
         {/* Heatmap — full width */}
         <div id="sec-heatmap" className="sec">
@@ -853,8 +875,8 @@ export default function App() {
         </div>
       </div>
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
-      <button className="ph-btn ph-primary" onClick={() => { setFeedbackOpen(true); track("feedback_open"); }} title="의견 보내기"
-        style={{ position: "fixed", right: 18, bottom: 18, zIndex: 70, ...primaryBtn(th), padding: "11px 16px", borderRadius: 999, boxShadow: "0 6px 20px rgba(0,0,0,.3)" }}>💬 의견</button>
+      <button className="ph-btn ph-primary" onClick={() => { setFeedbackOpen(true); track("feedback_open"); }} title="의견·건의 보내기"
+        style={{ position: "fixed", right: 20, bottom: 20, zIndex: 75, display: "flex", alignItems: "center", gap: 7, background: th.accent, color: "#fff", border: "2px solid rgba(255,255,255,.18)", padding: "13px 20px", borderRadius: 999, fontWeight: 800, fontSize: 14.5, cursor: "pointer", boxShadow: "0 8px 24px rgba(45,156,219,.45)" }}>💬 의견 보내기</button>
       {feedbackOpen && <FeedbackModal th={th} onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
@@ -1482,14 +1504,18 @@ const NAV = [
   ["sec-ideas", "투자 아이디어"],
   ["sec-whales", "부자들"],
 ];
-function TopNav({ th }) {
+function TopNav({ th, onHelp }) {
   const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
     <div style={{ position: "sticky", top: 63, zIndex: 15, background: th.bg, borderBottom: `1px solid ${th.border}` }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 12px", display: "flex", gap: 2, overflowX: "auto" }}>
+      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 12px", display: "flex", gap: 2, overflowX: "auto", alignItems: "center" }}>
         {NAV.map(([id, label]) => (
           <button key={id} className="navbtn" onClick={() => go(id)} style={{ flexShrink: 0, background: "transparent", border: "none", color: th.textDim, fontWeight: 700, fontSize: 13, padding: "11px 13px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{label}</button>
         ))}
+        <div style={{ flex: 1, minWidth: 8 }} />
+        {onHelp && (
+          <button className="navbtn" onClick={onHelp} title="앱 소개 · 예시 데이터 불러오기" style={{ flexShrink: 0, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, fontWeight: 700, fontSize: 13, padding: "7px 13px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", margin: "5px 0" }}>✨ 둘러보기</button>
+        )}
       </div>
     </div>
   );
