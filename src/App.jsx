@@ -928,10 +928,12 @@ export default function App() {
 
         {/* cash + allocation donut (sector / holding toggle) */}
         <div id="sec-allocation" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} >
-          <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
-            investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
+              investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
+            <FxCard th={th} fx={fxPnl} displayCur={displayCur} />
+          </div>
           <AllocationDonut th={th} sectorData={sectorData} sectorColorMap={colorMap} holdingValue={holdingAllocValue} holdingCost={holdingAllocCost} holdingColorMap={holdingColorMap} />
-          <FxCard th={th} fx={fxPnl} displayCur={displayCur} />
         </div>
 
         {/* goal + benchmark */}
@@ -1522,13 +1524,15 @@ function Empty({ th, text }) {
 function TrendCard({ th, snapshots, displayCur, rate, preview }) {
   const sample = useMemo(() => {
     if (!preview) return null;
-    const pts = []; const now = new Date(); let v = 7600;
+    let seed = 20260620; // deterministic so it doesn't change each render
+    const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
+    const pts = []; const now = new Date(); let v = 6200;
     for (let i = 59; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const drift = 1.0235; // ~2.35%/mo long-run
-      const noise = 1 + Math.sin(i * 1.35) * 0.045 + (i % 9 === 0 ? -0.06 : 0); // realistic dips
-      v = v * drift * noise;
-      pts.push({ t: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, v: Math.max(3000, Math.round(v)) });
+      let r = 0.019 + (rnd() - 0.5) * 0.17;        // monthly return: drift + volatility
+      if (rnd() < 0.10) r -= 0.11 + rnd() * 0.14;   // occasional sharp drawdowns (corrections)
+      v = Math.max(2600, v * (1 + r));
+      pts.push({ t: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, v: Math.round(v) });
     }
     return pts;
   }, [preview]);
@@ -1553,7 +1557,7 @@ function TrendCard({ th, snapshots, displayCur, rate, preview }) {
               <XAxis dataKey="t" tick={{ fontSize: 10, fill: th.textFaint }} tickFormatter={(t) => preview ? t.slice(0, 4) : t.slice(5)} minTickGap={preview ? 48 : 28} axisLine={false} tickLine={false} />
               <YAxis hide domain={["dataMin", "dataMax"]} />
               <Tooltip contentStyle={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, fontSize: 12, color: th.text }} labelStyle={{ color: th.textDim }} formatter={(v) => [fmtMoney(v, displayCur), "총자산"]} />
-              <Area type="monotone" dataKey="v" stroke={th.accent} strokeWidth={2} fill="url(#nw)" />
+              <Area type={preview ? "linear" : "monotone"} dataKey="v" stroke={th.accent} strokeWidth={2} fill="url(#nw)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -1714,16 +1718,131 @@ function TickerInput({ th, value, placeholder, width, type, onText, onPick }) {
   );
 }
 
-function StockModal({ th, info, hist, holding, displayCur, onClose }) {
-  const closes = hist?.closes || [], ts = hist?.ts || [];
-  const data = closes.map((c, i) => ({ t: ts[i] ? new Date(ts[i] * 1000).toISOString().slice(5, 10) : i, v: c }));
-  const first = closes[0], last = closes[closes.length - 1];
+/* flexible Yahoo chart fetch for the detail modal (range or custom period) */
+async function fetchChart({ sym, range, interval, period1, period2 }) {
+  try {
+    const base = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}`;
+    const q = (period1 && period2)
+      ? `${base}?period1=${period1}&period2=${period2}&interval=${interval}&includePrePost=false`
+      : `${base}?range=${range}&interval=${interval}&includePrePost=false`;
+    const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(q)}`);
+    const j = await r.json();
+    const res = j?.chart?.result?.[0];
+    const ts = res?.timestamp || [];
+    const closes = res?.indicators?.quote?.[0]?.close || [];
+    const out = [];
+    for (let i = 0; i < ts.length; i++) { if (closes[i] != null) out.push({ t: ts[i], v: closes[i] }); }
+    return out;
+  } catch { return []; }
+}
+
+const CHART_RANGES = [
+  ["1d", "1일", "1d", "5m"], ["5d", "1주", "5d", "30m"], ["1mo", "1달", "1mo", "1d"],
+  ["3mo", "3달", "3mo", "1d"], ["6mo", "6개월", "6mo", "1d"], ["1y", "1년", "1y", "1d"],
+  ["5y", "5년", "5y", "1wk"], ["max", "전체", "max", "1mo"],
+];
+
+function ChartTip({ active, payload, cur, intraday, th }) {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0].payload;
+  const d = new Date(p.t * 1000);
+  const label = intraday
+    ? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
+    : d.toISOString().slice(0, 10);
+  return (
+    <div style={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 9, padding: "7px 11px", fontSize: 12, boxShadow: th.cardShadow }}>
+      <div style={{ color: th.textDim, marginBottom: 3 }}>{label}</div>
+      <div className="num" style={{ fontWeight: 800, fontSize: 14, color: th.text }}>{cur}{fmt(p.v, 2)}</div>
+    </div>
+  );
+}
+
+function StockChart({ th, sym, cur, initialData }) {
+  const [rangeKey, setRangeKey] = useState("6mo");
+  const [data, setData] = useState(initialData || []);
+  const [loading, setLoading] = useState(false);
+  const [customOpen, setCustomOpen] = useState(false);
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const intraday = rangeKey === "1d" || rangeKey === "5d";
+
+  useEffect(() => {
+    let alive = true;
+    const r = CHART_RANGES.find((x) => x[0] === rangeKey);
+    // default 6mo uses the data already loaded by the app (instant, no extra fetch)
+    if (rangeKey === "6mo" && initialData && initialData.length > 1) { setData(initialData); return; }
+    setLoading(true);
+    fetchChart({ sym, range: r[2], interval: r[3] }).then((d) => { if (alive) { setData(d); setLoading(false); } });
+    return () => { alive = false; };
+  }, [sym, rangeKey]); // eslint-disable-line
+
+  const applyCustom = () => {
+    if (!from || !to) return;
+    const p1 = Math.floor(new Date(from + "T00:00:00Z").getTime() / 1000);
+    const p2 = Math.floor(new Date(to + "T23:59:59Z").getTime() / 1000);
+    if (!(p2 > p1)) return;
+    const days = (p2 - p1) / 86400;
+    const interval = days > 1500 ? "1wk" : "1d";
+    setRangeKey("custom"); setLoading(true);
+    fetchChart({ sym, interval, period1: p1, period2: p2 }).then((d) => { setData(d); setLoading(false); });
+  };
+
+  const first = data[0]?.v, last = data[data.length - 1]?.v;
   const chg = first && last ? ((last - first) / first) * 100 : null;
   const up = (chg ?? 0) >= 0;
+  const col = up ? th.heatPos : th.heatNeg;
+  const fmtTick = (t) => { const d = new Date(t * 1000); return intraday ? `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}` : `${d.getFullYear().toString().slice(2)}/${String(d.getMonth() + 1).padStart(2, "0")}`; };
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
+        {CHART_RANGES.map(([k, label]) => (
+          <button key={k} className="ph-btn" onClick={() => { setCustomOpen(false); setRangeKey(k); }}
+            style={{ background: rangeKey === k ? th.accent : "transparent", color: rangeKey === k ? "#fff" : th.textDim, border: `1px solid ${rangeKey === k ? th.accent : th.border}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+        ))}
+        <button className="ph-btn" onClick={() => setCustomOpen((v) => !v)}
+          style={{ background: rangeKey === "custom" ? th.accent : "transparent", color: rangeKey === "custom" ? "#fff" : th.textDim, border: `1px solid ${rangeKey === "custom" ? th.accent : th.border}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📅 기간선택</button>
+      </div>
+      {customOpen && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} style={{ ...inpStyle(th, 0), colorScheme: th === THEMES.dark ? "dark" : "light", padding: "5px 8px" }} />
+          <span style={{ color: th.textDim }}>~</span>
+          <input type="date" value={to} onChange={(e) => setTo(e.target.value)} style={{ ...inpStyle(th, 0), colorScheme: th === THEMES.dark ? "dark" : "light", padding: "5px 8px" }} />
+          <button className="ph-btn ph-primary" onClick={applyCustom} style={{ ...primaryBtn(th), padding: "6px 12px" }}>적용</button>
+        </div>
+      )}
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 2 }}>
+        <span style={{ fontSize: 12, color: th.textDim }}>{rangeKey === "custom" ? `${from} ~ ${to}` : CHART_RANGES.find((x) => x[0] === rangeKey)?.[1]}</span>
+        {chg != null && <span className="num" style={{ fontSize: 13, fontWeight: 700, color: col }}>{up ? "+" : ""}{fmt(chg)}%</span>}
+      </div>
+      <div style={{ height: 250, position: "relative" }}>
+        {loading && <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13, zIndex: 2 }}>불러오는 중…</div>}
+        {data.length > 1 ? (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data} margin={{ top: 6, right: 8, left: -8, bottom: 0 }}>
+              <defs><linearGradient id="smk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={col} stopOpacity={0.32} /><stop offset="100%" stopColor={col} stopOpacity={0} /></linearGradient></defs>
+              <XAxis dataKey="t" tickFormatter={fmtTick} tick={{ fontSize: 10, fill: th.textFaint }} minTickGap={44} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: th.textFaint }} axisLine={false} tickLine={false} width={46} domain={["auto", "auto"]} tickFormatter={(v) => fmt(v, 0)} />
+              <Tooltip content={<ChartTip cur={cur} intraday={intraday} th={th} />} cursor={{ stroke: th.textDim, strokeWidth: 1, strokeDasharray: "3 3" }} />
+              <Area type="monotone" dataKey="v" stroke={col} strokeWidth={2} fill="url(#smk)" dot={false} activeDot={{ r: 5, fill: col, stroke: "#fff", strokeWidth: 2 }} />
+            </AreaChart>
+          </ResponsiveContainer>
+        ) : !loading && (
+          <div style={{ height: "100%", display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13, textAlign: "center" }}>차트 데이터를 불러오지 못했어요.<br />(미리보기 샌드박스에선 주가가 막힐 수 있어요 — 배포본에서 정상)</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StockModal({ th, info, hist, holding, displayCur, onClose }) {
+  const closes = hist?.closes || [], ts = hist?.ts || [];
+  const initialData = closes.map((c, i) => ({ t: ts[i], v: c })).filter((d) => d.t && d.v != null);
   const cur = holding?.cur === "KRW" ? "₩" : "$";
+  const sym = info.key || info.ticker;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 80, display: "grid", placeItems: "center", padding: 18 }}>
-      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(560px,100%)", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(640px,100%)", maxHeight: "92vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 19, fontWeight: 800 }}>{bareCode(info.ticker)}</span>
           <span style={{ fontSize: 13, color: th.textDim }}>{info.name || ""}</span>
@@ -1738,27 +1857,7 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
             {holding.bbPos != null && <span>BB <b className="num">{fmt(holding.bbPos, 0)}%</b></span>}
           </div>
         )}
-        {data.length > 1 ? (
-          <>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-              <span style={{ fontSize: 12, color: th.textDim }}>최근 6개월</span>
-              {chg != null && <span className="num" style={{ fontSize: 13, fontWeight: 700, color: up ? th.heatPos : th.heatNeg }}>{up ? "+" : ""}{fmt(chg)}%</span>}
-            </div>
-            <div style={{ height: 230 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={data} margin={{ top: 6, right: 6, left: -10, bottom: 0 }}>
-                  <defs><linearGradient id="sm" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor={up ? th.heatPos : th.heatNeg} stopOpacity={0.35} /><stop offset="100%" stopColor={up ? th.heatPos : th.heatNeg} stopOpacity={0} /></linearGradient></defs>
-                  <XAxis dataKey="t" tick={{ fontSize: 10, fill: th.textFaint }} minTickGap={40} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontSize: 10, fill: th.textFaint }} axisLine={false} tickLine={false} width={44} domain={["auto", "auto"]} />
-                  <Tooltip contentStyle={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, fontSize: 12, color: th.text }} labelStyle={{ color: th.textDim }} formatter={(v) => [`${cur}${fmt(v, 2)}`, "종가"]} />
-                  <Area type="monotone" dataKey="v" stroke={up ? th.heatPos : th.heatNeg} strokeWidth={2} fill="url(#sm)" />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </>
-        ) : (
-          <div style={{ height: 150, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13, textAlign: "center" }}>차트 데이터를 불러오지 못했어요.<br />(미리보기 샌드박스에선 주가가 막힐 수 있어요)</div>
-        )}
+        <StockChart th={th} sym={sym} cur={cur} initialData={initialData} />
         <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
           <LinkBtn th={th} href={yahooUrl(info.ticker)} color="#7c4dff">Yahoo Finance ↗</LinkBtn>
           <LinkBtn th={th} href={tossUrl(info.ticker)} color="#2d9cdb">토스증권 ↗</LinkBtn>
