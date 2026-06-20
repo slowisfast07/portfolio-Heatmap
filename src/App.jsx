@@ -499,6 +499,8 @@ export default function App() {
   const [showPct, setShowPct] = useState(true);
   const [labelMode, setLabelMode] = useState("ticker");
   const [portfolioCollapsed, setPortfolioCollapsed] = useState(false);
+  const [advanced, setAdvanced] = useState(false);
+  const [hideAmt, setHideAmt] = useState(false);
   const [goal, setGoal] = useState(null);          // { amount, cur }
   const [snapshots, setSnapshots] = useState([]);   // [{ t: 'YYYY-MM-DD', v: USD }]
   const [benchmarks, setBenchmarks] = useState({}); // { '^GSPC': {chg}, ... }
@@ -530,6 +532,7 @@ export default function App() {
         if (x.showPct != null) setShowPct(x.showPct);
         if (x.labelMode) setLabelMode(x.labelMode);
         if (x.portfolioCollapsed != null) setPortfolioCollapsed(x.portfolioCollapsed);
+        if (x.advanced != null) setAdvanced(x.advanced);
       }
       setHydrated(true);
       track("app_open", { from: getSource() });
@@ -537,8 +540,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hydrated && !previewMode) { persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed } }); setSavedAt(Date.now()); }
-  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, hydrated, previewMode]);
+    if (hydrated && !previewMode) { persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced } }); setSavedAt(Date.now()); }
+  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced, hydrated, previewMode]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -623,6 +626,24 @@ export default function App() {
     const tot = Object.values(m).reduce((a, b) => a + b, 0);
     return Object.entries(m).map(([sector, value]) => ({ sector, value, pct: tot ? (value / tot) * 100 : 0 })).sort((a, b) => b.value - a.value);
   }, [leaves]);
+
+  /* per-holding allocation for the donut (#종목별 자산 비중) */
+  const holdingAllocValue = useMemo(() => {
+    const rows = holdings.filter((h) => h.ticker && valueOf(h) > 0).map((h) => ({ sector: bareCode(h.ticker), value: valueOf(h) }));
+    const tot = rows.reduce((a, b) => a + b.value, 0);
+    return rows.map((r) => ({ ...r, pct: tot ? (r.value / tot) * 100 : 0 })).sort((a, b) => b.value - a.value);
+  }, [holdings, valueOf]);
+  const holdingAllocCost = useMemo(() => {
+    const rows = holdings.filter((h) => h.ticker && costOf(h) > 0).map((h) => ({ sector: bareCode(h.ticker), value: costOf(h) }));
+    const tot = rows.reduce((a, b) => a + b.value, 0);
+    return rows.map((r) => ({ ...r, pct: tot ? (r.value / tot) * 100 : 0 })).sort((a, b) => b.value - a.value);
+  }, [holdings, costOf]);
+  const holdingColorMap = useMemo(() => {
+    const map = {}; let i = 0;
+    holdingAllocValue.forEach((r) => { if (!map[r.sector]) map[r.sector] = PALETTE[i++ % PALETTE.length]; });
+    holdingAllocCost.forEach((r) => { if (!map[r.sector]) map[r.sector] = PALETTE[i++ % PALETTE.length]; });
+    return map;
+  }, [holdingAllocValue, holdingAllocCost]);
 
   const addHolding = () => { setHoldings((p) => [...p, { id: uid(), type: "us", ticker: "", name: "", sector: "Technology", qty: 0, avgCost: null, buyDate: null, price: null, cur: "USD", chg: null, live: false }]); track("add_holding"); };
   const loadSample = useCallback(() => {
@@ -813,7 +834,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ textAlign: "right", marginRight: 6 }}>
-          <div className="num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5 }}>{fmtMoney(totalAssets, displayCur)}</div>
+          <div className="num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5 }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 3 }}>
             <DeltaPill th={th} label="오늘" v={dayChange} />
             <DeltaPill th={th} label="수익" v={totalReturn} />
@@ -859,6 +880,8 @@ export default function App() {
         {(showWelcome || (!welcomeDismissed && holdings.every((h) => !h.ticker) && !cash.length)) && (
           <WelcomeBanner th={th} onSample={loadSample} onAdd={addHolding} onClose={() => { setWelcomeDismissed(true); setShowWelcome(false); }} />
         )}
+        {/* Summary band */}
+        <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} count={holdings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} />
         {/* Heatmap — full width */}
         <div id="sec-heatmap" className="sec">
         <Panel th={th} title="Heatmap" glow
@@ -876,6 +899,7 @@ export default function App() {
           right={
             <div style={{ display: "flex", gap: 8 }}>
               {!portfolioCollapsed && <>
+                <button className="ph-btn" onClick={() => setAdvanced((v) => !v)} style={{ ...secondaryBtn(th), ...(advanced ? { borderColor: th.accent, color: th.accent } : {}) }} title="매수일·RSI·볼린저(BB%) 열 표시">{advanced ? "✓ 심화" : "심화"}</button>
                 <button className="ph-btn" onClick={() => setShowImport((v) => !v)} style={{ ...secondaryBtn(th) }}><Upload size={14} /> 가져오기</button>
                 <button className="ph-btn ph-primary" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>
               </>}
@@ -892,28 +916,21 @@ export default function App() {
           ) : (
             <>
               {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
-              <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} />
+              <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} advanced={advanced} hideAmt={hideAmt} />
               <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
-                티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표(RSI·볼린저) 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다.
-                <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다. 다 넣은 뒤엔 <b style={{ color: th.textDim }}>▴ 접기</b>로 깔끔하게 정리하세요.
+                티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다.
+                <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다. <b style={{ color: th.textDim }}>심화</b>를 켜면 매수일·RSI·BB%가 보이고, 다 넣은 뒤엔 <b style={{ color: th.textDim }}>▴ 접기</b>로 정리하세요.
               </p>
             </>
           )}
         </Panel>
         </div>
 
-        {/* cash + sector donut */}
+        {/* cash + allocation donut (sector / holding toggle) */}
         <div id="sec-allocation" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} >
           <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
             investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
-          <Panel th={th} title="섹터별 자산 비중" sub={`${sectorData.length}개 구성`}>
-            <Donut data={sectorData} th={th} colorMap={colorMap} />
-          </Panel>
-        </div>
-
-        {/* per-holding weights + FX P&L */}
-        <div className="ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
-          <WeightCard th={th} rows={weightRows} />
+          <AllocationDonut th={th} sectorData={sectorData} sectorColorMap={colorMap} holdingValue={holdingAllocValue} holdingCost={holdingAllocCost} holdingColorMap={holdingColorMap} />
           <FxCard th={th} fx={fxPnl} displayCur={displayCur} />
         </div>
 
@@ -924,7 +941,7 @@ export default function App() {
         </div>
 
         {/* net-worth trend */}
-        <div id="sec-trend" className="sec"><TrendCard th={th} snapshots={snapshots} displayCur={displayCur} rate={rate} /></div>
+        <div id="sec-trend" className="sec"><TrendCard th={th} snapshots={snapshots} displayCur={displayCur} rate={rate} preview={previewMode} /></div>
 
         {/* recommendations */}
         <div id="sec-ideas" className="sec">
@@ -1011,12 +1028,17 @@ function HeatControls({ th, mode, cap, setCap, showPct, setShowPct, labelMode, s
 function Treemap({ leaves, th, cap, showPct, labelMode, onTile }) {
   const ref = useRef(null);
   const [w, setW] = useState(800);
-  const H = 430;
+  const [H, setH] = useState(560);
   useEffect(() => {
     if (!ref.current) return;
     const ro = new ResizeObserver((e) => setW(e[0].contentRect.width));
     ro.observe(ref.current);
     return () => ro.disconnect();
+  }, []);
+  useEffect(() => {
+    const calc = () => setH(Math.max(460, Math.min(780, Math.round((window.innerHeight || 800) * 0.66))));
+    calc(); window.addEventListener("resize", calc);
+    return () => window.removeEventListener("resize", calc);
   }, []);
 
   const root = useMemo(() => {
@@ -1027,7 +1049,7 @@ function Treemap({ leaves, th, cap, showPct, labelMode, onTile }) {
     const r = d3.hierarchy({ children }).sum((d) => d.value).sort((a, b) => b.value - a.value);
     d3.treemap().size([w, H]).paddingInner(3).paddingTop(21).round(true)(r);
     return r;
-  }, [leaves, w]);
+  }, [leaves, w, H]);
 
   if (!root) return <div ref={ref} style={{ height: H, display: "grid", placeItems: "center", color: th.textFaint, border: `1px dashed ${th.border}`, borderRadius: 10, fontSize: 13 }}>종목을 추가하면 히트맵이 표시됩니다</div>;
 
@@ -1113,9 +1135,9 @@ function Donut({ data, th, colorMap }) {
 /* ------------------------------------------------------------------ *
  *  TABLE                                                              *
  * ------------------------------------------------------------------ */
-function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill }) {
+function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill, advanced, hideAmt }) {
   const mobile = useIsMobile(720);
-  if (mobile) return (<><datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist><PortfolioCards holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={onUpdate} onRemove={onRemove} onAutoFill={onAutoFill} /></>);
+  if (mobile) return (<><datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist><PortfolioCards holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={onUpdate} onRemove={onRemove} onAutoFill={onAutoFill} advanced={advanced} /></>);
   const head = (t) => ({ textAlign: t || "left", fontSize: 10.5, fontWeight: 600, color: th.textFaint, padding: "8px 8px", textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap" });
   const cell = { padding: "6px 8px", fontSize: 12.5, borderTop: `1px solid ${th.border}` };
   return (
@@ -1124,8 +1146,8 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
         <thead><tr>
           <th style={head()}>유형</th><th style={head()}>티커</th><th style={head()}>이름</th><th style={head()}>섹터</th>
-          <th style={head("right")}>수량</th><th style={head("right")}>평단가</th><th style={head("center")} title="매수일을 넣으면 벤치마크 추이에 실제 보유 시점이 반영됩니다">매수일</th><th style={head("right")}>현재 주가</th>
-          <th style={head("right")}>일간%</th><th style={head("right")} title="RSI(14)">RSI</th><th style={head("right")} title="볼린저밴드 위치 (20일, 2σ) — %B">BB%</th><th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
+          <th style={head("right")}>수량</th><th style={head("right")}>평단가</th>{advanced && <th style={head("center")} title="매수일을 넣으면 벤치마크 추이에 실제 보유 시점이 반영됩니다">매수일</th>}<th style={head("right")}>현재 주가</th>
+          <th style={head("right")}>일간%</th>{advanced && <th style={head("right")} title="RSI(14)">RSI</th>}{advanced && <th style={head("right")} title="볼린저밴드 위치 (20일, 2σ) — %B">BB%</th>}<th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
         </tr></thead>
         <tbody>
           {holdings.map((h) => {
@@ -1140,7 +1162,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                 <td style={cell}><input list="ph-sectors" value={h.sector} placeholder="섹터/테마" onChange={(e) => onUpdate(h.id, { sector: e.target.value })} style={inpStyle(th, 132)} /></td>
                 <td style={{ ...cell, textAlign: "right" }}><input type="number" value={h.qty || ""} placeholder="0" onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 66), textAlign: "right" }} className="num" /></td>
                 <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 76), textAlign: "right" }} className="num" /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>
-                <td style={{ ...cell, textAlign: "center" }}><input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 124), colorScheme: th === THEMES.dark ? "dark" : "light" }} title="매수일(선택)" /></td>
+                {advanced && <td style={{ ...cell, textAlign: "center" }}><input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 124), colorScheme: th === THEMES.dark ? "dark" : "light" }} title="매수일(선택)" /></td>}
                 <td style={{ ...cell, textAlign: "right" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
                     <input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 84), textAlign: "right", color: h.live ? th.accent : th.text }} className="num" title={h.live ? "야후 실시간" : "직접 입력 가능"} />
@@ -1151,16 +1173,16 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                   )}
                 </td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg, fontWeight: 600 }}>{h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}`}</td>
-                <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600, color: h.rsi == null ? th.textFaint : h.rsi >= 70 ? th.heatNeg : h.rsi <= 30 ? th.heatPos : th.textDim }} title={h.rsi >= 70 ? "과매수권" : h.rsi <= 30 ? "과매도권" : ""}>{h.rsi == null ? "—" : fmt(h.rsi, 0)}</td>
-                <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600, color: h.bbPos == null ? th.textFaint : h.bbPos >= 100 ? th.heatNeg : h.bbPos <= 0 ? th.heatPos : th.textDim }} title="볼린저밴드 내 위치 (0%=하단, 100%=상단)">{h.bbPos == null ? "—" : fmt(h.bbPos, 0) + "%"}</td>
+                {advanced && <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600, color: h.rsi == null ? th.textFaint : h.rsi >= 70 ? th.heatNeg : h.rsi <= 30 ? th.heatPos : th.textDim }} title={h.rsi >= 70 ? "과매수권" : h.rsi <= 30 ? "과매도권" : ""}>{h.rsi == null ? "—" : fmt(h.rsi, 0)}</td>}
+                {advanced && <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600, color: h.bbPos == null ? th.textFaint : h.bbPos >= 100 ? th.heatNeg : h.bbPos <= 0 ? th.heatPos : th.textDim }} title="볼린저밴드 내 위치 (0%=하단, 100%=상단)">{h.bbPos == null ? "—" : fmt(h.bbPos, 0) + "%"}</td>}
                 <td className="num" style={{ ...cell, textAlign: "right", color: ret == null ? th.textFaint : ret >= 0 ? th.heatPos : th.heatNeg, fontWeight: 700 }}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}`}</td>
-                <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{fmtMoney(v, displayCur)}</td>
+                <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{hideAmt ? "••••" : fmtMoney(v, displayCur)}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: th.textDim }}>{fmt(wpct, 1)}%</td>
                 <td style={{ ...cell, textAlign: "center" }}><button className="ph-btn" onClick={() => onRemove(h.id)} style={{ ...iconBtn(th), width: 28, height: 28, color: th.heatNeg }}><Trash2 size={14} /></button></td>
               </tr>
             );
           })}
-          {!holdings.length && <tr><td colSpan={15} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
+          {!holdings.length && <tr><td colSpan={advanced ? 15 : 12} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
         </tbody>
       </table>
     </div>
@@ -1321,10 +1343,10 @@ function IdeaDetail({ th, idea, onClose, onAdd }) {
 
 function WhaleCard({ th, w, onSelect, on }) {
   return (
-    <button className="ph-card" onClick={() => onSelect(w)} style={{ width: 234, padding: 16, borderRadius: 14, border: `1px solid ${on ? th.accent : th.border}`, background: th.panel, cursor: "pointer", textAlign: "left" }}>
+    <button className="ph-card" onClick={() => onSelect(w)} style={{ width: 234, padding: 16, borderRadius: 14, border: `1px solid ${on ? th.accent : th.border}`, background: th.panel, cursor: "pointer", textAlign: "left", color: th.text }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${w.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", flexShrink: 0 }}>{w.name.slice(0, 1)}</div>
-        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap" }}>{w.name}</div><div style={{ fontSize: 11, color: th.textDim, whiteSpace: "nowrap" }}>{w.fund}</div></div>
+        <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap", color: th.text }}>{w.name}</div><div style={{ fontSize: 11, color: th.textDim, whiteSpace: "nowrap" }}>{w.fund}</div></div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
         {w.holdings.slice(0, 4).map((x) => (<span key={x.t} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 7, background: th.panelAlt, color: th.textDim }}>{x.t}</span>))}
@@ -1497,13 +1519,26 @@ function Empty({ th, text }) {
 /* ------------------------------------------------------------------ *
  *  NET-WORTH TREND                                                    *
  * ------------------------------------------------------------------ */
-function TrendCard({ th, snapshots, displayCur, rate }) {
-  const data = (snapshots || []).map((s) => ({ t: s.t, v: displayCur === "USD" ? s.v : s.v * rate }));
+function TrendCard({ th, snapshots, displayCur, rate, preview }) {
+  const sample = useMemo(() => {
+    if (!preview) return null;
+    const pts = []; const now = new Date(); let v = 7600;
+    for (let i = 59; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const drift = 1.0235; // ~2.35%/mo long-run
+      const noise = 1 + Math.sin(i * 1.35) * 0.045 + (i % 9 === 0 ? -0.06 : 0); // realistic dips
+      v = v * drift * noise;
+      pts.push({ t: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, v: Math.max(3000, Math.round(v)) });
+    }
+    return pts;
+  }, [preview]);
+  const base = preview && sample ? sample : (snapshots || []);
+  const data = base.map((s) => ({ t: s.t, v: displayCur === "USD" ? s.v : s.v * rate }));
   const enough = data.length >= 2;
   const first = data[0]?.v, last = data[data.length - 1]?.v;
   const chg = enough && first ? ((last - first) / first) * 100 : null;
   return (
-    <Panel th={th} title="자산 추이" sub={enough ? `${data.length}일 기록` : "기록이 쌓이면 추이가 보여요"}
+    <Panel th={th} title="자산 추이" sub={preview ? "예시 · 최근 5년 (장기투자 시뮬레이션)" : enough ? `${data.length}일 기록` : "기록이 쌓이면 추이가 보여요"}
       right={chg != null && <span className="num" style={{ fontSize: 13, fontWeight: 700, color: chg >= 0 ? th.heatPos : th.heatNeg }}>{chg >= 0 ? "+" : ""}{fmt(chg)}%</span>}>
       {enough ? (
         <div style={{ height: 200 }}>
@@ -1515,7 +1550,7 @@ function TrendCard({ th, snapshots, displayCur, rate }) {
                   <stop offset="100%" stopColor={th.accent} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <XAxis dataKey="t" tick={{ fontSize: 10, fill: th.textFaint }} tickFormatter={(t) => t.slice(5)} minTickGap={28} axisLine={false} tickLine={false} />
+              <XAxis dataKey="t" tick={{ fontSize: 10, fill: th.textFaint }} tickFormatter={(t) => preview ? t.slice(0, 4) : t.slice(5)} minTickGap={preview ? 48 : 28} axisLine={false} tickLine={false} />
               <YAxis hide domain={["dataMin", "dataMax"]} />
               <Tooltip contentStyle={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, fontSize: 12, color: th.text }} labelStyle={{ color: th.textDim }} formatter={(v) => [fmtMoney(v, displayCur), "총자산"]} />
               <Area type="monotone" dataKey="v" stroke={th.accent} strokeWidth={2} fill="url(#nw)" />
@@ -1527,6 +1562,7 @@ function TrendCard({ th, snapshots, displayCur, rate }) {
           매일 접속하면 그날의 총자산이 자동 기록되어<br />며칠 뒤부터 자산 변화 그래프가 그려집니다.
         </div>
       )}
+      {preview && <p style={{ fontSize: 11, color: th.textFaint, marginTop: 8 }}>※ 예시용 가상 데이터예요. 실제로는 매일 접속하면 그날 총자산이 기록되어 내 추이가 그려집니다.</p>}
     </Panel>
   );
 }
@@ -1601,7 +1637,7 @@ const NAV = [
   ["sec-goal", "목표·벤치마크"],
   ["sec-trend", "자산추이"],
   ["sec-ideas", "투자 아이디어"],
-  ["sec-whales", "부자들"],
+  ["sec-whales", "부자들의 포트폴리오"],
 ];
 function TopNav({ th, onHelp }) {
   const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
@@ -1734,7 +1770,7 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
 }
 
 /* mobile card view for holdings (#10) */
-function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill }) {
+function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill, advanced }) {
   if (!holdings.length) return <div style={{ textAlign: "center", color: th.textFaint, padding: 24, fontSize: 13 }}>"종목 추가"를 눌러 입력하세요</div>;
   const fld = (label, node) => <div style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 10, color: th.textFaint, fontWeight: 600 }}>{label}</span>{node}</div>;
   return (
@@ -1759,12 +1795,12 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
               {fld("수량", <input type="number" value={h.qty || ""} placeholder="0" onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
               {fld(`평단가(${h.cur === "KRW" ? "₩" : "$"})`, <input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
               {fld(`현재가(${h.cur === "KRW" ? "₩" : "$"})`, <input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right", color: h.live ? th.accent : th.text }} className="num" />)}
-              {fld("매수일", <input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 0), width: "100%" }} />)}
+              {advanced && fld("매수일", <input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 0), width: "100%" }} />)}
             </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 9, borderTop: `1px solid ${th.border}` }}>
               {metric("일간", h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}%`, h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg)}
-              {metric("RSI", h.rsi == null ? "—" : fmt(h.rsi, 0), h.rsi == null ? th.textFaint : h.rsi >= 70 ? th.heatNeg : h.rsi <= 30 ? th.heatPos : th.text)}
-              {metric("BB%", h.bbPos == null ? "—" : fmt(h.bbPos, 0) + "%", th.textDim)}
+              {advanced && metric("RSI", h.rsi == null ? "—" : fmt(h.rsi, 0), h.rsi == null ? th.textFaint : h.rsi >= 70 ? th.heatNeg : h.rsi <= 30 ? th.heatPos : th.text)}
+              {advanced && metric("BB%", h.bbPos == null ? "—" : fmt(h.bbPos, 0) + "%", th.textDim)}
               {metric("수익률", ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}%`, ret == null ? th.textFaint : ret >= 0 ? th.heatPos : th.heatNeg)}
               {metric("평가액", fmtMoney(v, displayCur))}
               {metric("비중", `${fmt(wpct, 1)}%`, th.textDim)}
@@ -1911,6 +1947,57 @@ function FxCard({ th, fx, displayCur }) {
           {!fx.hasFxHist && <><br /><span style={{ color: th.textFaint }}>(환율 데이터 로딩 중일 수 있어요 — 새로고침 후 표시)</span></>}
         </div>
       )}
+    </Panel>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  SUMMARY BAND (big top stats, Finviz-style overview)                *
+ * ------------------------------------------------------------------ */
+function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur, hideAmt, onToggleHide }) {
+  const m = (v) => (hideAmt ? "••••" : fmtMoney(v, displayCur));
+  const Cell = ({ label, children, color }) => (
+    <div style={{ flex: "1 1 150px", minWidth: 130, padding: "12px 16px", borderRight: `1px solid ${th.border}` }}>
+      <div style={{ fontSize: 11, color: th.textFaint, fontWeight: 700, marginBottom: 5 }}>{label}</div>
+      <div className="num" style={{ fontSize: 19, fontWeight: 800, letterSpacing: -0.4, color: color || th.text }}>{children}</div>
+    </div>
+  );
+  return (
+    <div className="ph-card" style={{ borderRadius: 14, border: `1px solid ${th.border}`, background: th.panel, boxShadow: th.cardShadow, overflow: "hidden" }}>
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch" }}>
+        <Cell label="총 평가금액">{m(totalAssets)}</Cell>
+        <Cell label="투자 원금">{m(cost)}</Cell>
+        <Cell label="평가 손익" color={pnl == null ? th.text : pnl >= 0 ? th.heatPos : th.heatNeg}>{pnl == null ? "—" : (pnl >= 0 ? "+" : "") + m(pnl)}</Cell>
+        <Cell label="전체 수익률" color={ret == null ? th.text : ret >= 0 ? th.heatPos : th.heatNeg}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}%`}</Cell>
+        <Cell label="보유 종목">{count}개</Cell>
+        <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", padding: "12px 14px" }}>
+          <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ background: th.panelAlt, border: `1px solid ${th.border}`, color: th.textDim, fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>
+            {hideAmt ? "👁 금액 보이기" : "🙈 금액 가리기"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  ALLOCATION DONUT — 섹터별 / 종목별(원금·평가액) 토글                 *
+ * ------------------------------------------------------------------ */
+function AllocationDonut({ th, sectorData, sectorColorMap, holdingValue, holdingCost, holdingColorMap }) {
+  const [mode, setMode] = useState("sector"); // sector | holding
+  const [basis, setBasis] = useState("value"); // value | cost
+  const data = mode === "sector" ? sectorData : (basis === "value" ? holdingValue : holdingCost);
+  const cmap = mode === "sector" ? sectorColorMap : holdingColorMap;
+  const sub = mode === "sector" ? `${sectorData.length}개 구성` : (basis === "value" ? "평가액(현재가) 기준" : "원금(평단가) 기준");
+  return (
+    <Panel th={th} title={mode === "sector" ? "섹터별 자산 비중" : "종목별 자산 비중"} sub={sub}
+      titleExtra={<Segmented th={th} value={mode} onChange={setMode} options={[["sector", "섹터별"], ["holding", "종목별"]]} />}>
+      {mode === "holding" && (
+        <div style={{ marginBottom: 12 }}>
+          <Segmented th={th} value={basis} onChange={setBasis} options={[["value", "평가액 기준"], ["cost", "원금 기준"]]} />
+        </div>
+      )}
+      <Donut data={data} th={th} colorMap={cmap} />
     </Panel>
   );
 }
