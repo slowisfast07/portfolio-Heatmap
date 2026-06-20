@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import * as d3 from "d3";
-import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar, ReferenceLine } from "recharts";
+import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar, ReferenceLine, Customized } from "recharts";
 import {
   Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
   Image as ImageIcon, FileText,
@@ -1447,8 +1447,47 @@ function GoalCard({ th, goal, setGoal, totalAssets, displayCur, conv }) {
 /* ------------------------------------------------------------------ *
  *  BENCHMARK (today's performance vs indices)                         *
  * ------------------------------------------------------------------ */
+/* Kalshi-style overlay: glowing current-value dots + per-line hover labels */
+function KalshiOverlay(props) {
+  const { formattedGraphicalItems, offset, lines, hoverIdx, th } = props;
+  if (!formattedGraphicalItems || !offset) return null;
+  const halos = [], dots = [], labels = [];
+  let hoverX = null;
+  formattedGraphicalItems.forEach((it) => {
+    const key = it && it.props && it.props.dataKey;
+    const pts = (it && it.props && it.props.points) || [];
+    const meta = lines.find((l) => l.key === key);
+    if (!meta || !pts.length) return;
+    const last = pts[pts.length - 1];
+    if (last && last.x != null && last.y != null) {
+      halos.push(<circle key={key + "-halo2"} cx={last.x} cy={last.y} r={15} fill={meta.color} opacity={0.12} />);
+      halos.push(<circle key={key + "-halo1"} cx={last.x} cy={last.y} r={9} fill={meta.color} opacity={0.3} />);
+      dots.push(<circle key={key + "-end"} cx={last.x} cy={last.y} r={5} fill={meta.color} stroke="#fff" strokeWidth={1.8} />);
+    }
+    if (hoverIdx != null && pts[hoverIdx] && pts[hoverIdx].x != null) {
+      const p = pts[hoverIdx]; hoverX = p.x;
+      const pct = (p.value ?? 100) - 100;
+      const right = p.x > offset.left + offset.width * 0.6;
+      labels.push(<circle key={key + "-hd"} cx={p.x} cy={p.y} r={4} fill={meta.color} stroke="#fff" strokeWidth={1.6} />);
+      labels.push(
+        <text key={key + "-hl"} x={right ? p.x - 8 : p.x + 8} y={p.y - 6} textAnchor={right ? "end" : "start"}
+          fontSize={11} fontWeight={800} fill={meta.color} style={{ paintOrder: "stroke", stroke: th.panel, strokeWidth: 3.5 }}>
+          {`${meta.name} ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`}
+        </text>
+      );
+    }
+  });
+  return (
+    <g>
+      {hoverX != null && <line x1={hoverX} x2={hoverX} y1={offset.top} y2={offset.top + offset.height} stroke={th.textDim} strokeWidth={1} strokeDasharray="3 3" />}
+      {halos}{dots}{labels}
+    </g>
+  );
+}
+
 function BenchmarkCard({ th, dayChange, benchmarks, perf }) {
   const [mode, setMode] = useState("bar");
+  const [hoverIdx, setHoverIdx] = useState(null);
   const data = [
     { label: "내 포트폴리오", v: dayChange == null ? null : +dayChange.toFixed(2), me: true },
     ...BENCH.map((b) => ({ label: b.label, v: benchmarks[b.sym]?.chg != null ? +benchmarks[b.sym].chg.toFixed(2) : null, me: false })),
@@ -1489,14 +1528,17 @@ function BenchmarkCard({ th, dayChange, benchmarks, perf }) {
           <>
             <div style={{ height: 224 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={series} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+                <AreaChart data={series} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}
+                  onMouseMove={(s) => setHoverIdx(s && s.activeTooltipIndex != null ? s.activeTooltipIndex : null)}
+                  onMouseLeave={() => setHoverIdx(null)}>
                   <XAxis dataKey="t" tick={{ fontSize: 10, fill: th.textFaint }} minTickGap={36} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: th.textFaint }} axisLine={false} tickLine={false} width={34} domain={["auto", "auto"]} />
                   <ReferenceLine y={100} stroke={th.border} strokeDasharray="3 3" />
-                  <Tooltip contentStyle={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, fontSize: 12, color: th.text }} labelStyle={{ color: th.textDim }} formatter={(v, n) => [`${v} (${v >= 100 ? "+" : ""}${(v - 100).toFixed(1)}%)`, n]} />
+                  <Tooltip cursor={false} content={() => null} />
                   {LINES.map((l) => (series.some((r) => r[l.key] != null) &&
-                    <Area key={l.key} type="monotone" dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={l.width} fill="none" dot={false} isAnimationActive={false} connectNulls />
+                    <Area key={l.key} type="monotone" dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={l.width} fill="none" dot={false} activeDot={false} isAnimationActive={false} connectNulls />
                   ))}
+                  <Customized component={(p) => <KalshiOverlay {...p} lines={LINES} hoverIdx={hoverIdx} th={th} />} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -1524,14 +1566,17 @@ function Empty({ th, text }) {
 function TrendCard({ th, snapshots, displayCur, rate, preview }) {
   const sample = useMemo(() => {
     if (!preview) return null;
-    let seed = 20260620; // deterministic so it doesn't change each render
+    let seed = 987654321;
     const rnd = () => { seed = (seed * 1664525 + 1013904223) % 4294967296; return seed / 4294967296; };
-    const pts = []; const now = new Date(); let v = 6200;
-    for (let i = 59; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      let r = 0.019 + (rnd() - 0.5) * 0.17;        // monthly return: drift + volatility
-      if (rnd() < 0.10) r -= 0.11 + rnd() * 0.14;   // occasional sharp drawdowns (corrections)
-      v = Math.max(2600, v * (1 + r));
+    const pts = []; const now = new Date(); const n = 60;
+    const start = 6000, end = 21000;           // exponential uptrend backbone (~+250% / 5y)
+    let dev = 0;                                // mean-reverting deviation around the backbone
+    for (let i = 0; i < n; i++) {
+      const d = new Date(now.getFullYear(), now.getMonth() - (n - 1 - i), 1);
+      const base = start * Math.pow(end / start, i / (n - 1));
+      dev = dev * 0.72 + (rnd() - 0.5) * 0.17;   // wobble
+      if (rnd() < 0.06) dev -= 0.13;             // occasional sharp correction
+      const v = Math.max(2500, base * (1 + dev));
       pts.push({ t: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`, v: Math.round(v) });
     }
     return pts;
