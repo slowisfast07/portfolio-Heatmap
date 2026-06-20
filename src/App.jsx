@@ -34,11 +34,24 @@ function track(event, props) {
 
 /* demo portfolio for the "예시로 둘러보기" button (reduces empty-state bounce) */
 const SAMPLE_HOLDINGS = [
-  { type: "us", ticker: "NVDA", name: "NVIDIA", sector: "AI 반도체", qty: 10, avgCost: 120, cur: "USD" },
-  { type: "us", ticker: "MSFT", name: "Microsoft", sector: "소프트웨어", qty: 5, avgCost: 380, cur: "USD" },
-  { type: "us", ticker: "MU", name: "Micron", sector: "메모리/반도체", qty: 15, avgCost: 95, cur: "USD" },
-  { type: "kr", ticker: "005930.KS", name: "삼성전자", sector: "메모리/반도체", qty: 50, avgCost: 70000, cur: "KRW" },
-  { type: "crypto", ticker: "BTC", name: "Bitcoin", sector: "Crypto", qty: 0.2, avgCost: 60000, cur: "USD" },
+  { type: "us", ticker: "NVDA", name: "NVIDIA", sector: "AI 반도체", qty: 18, avgCost: 110, price: 210, chg: 2.9, cur: "USD", buyDate: "2024-02-12", rsi: 68, bbPos: 88 },
+  { type: "us", ticker: "AVGO", name: "Broadcom", sector: "AI 반도체", qty: 5, avgCost: 1150, price: 1740, chg: 1.9, cur: "USD", buyDate: "2024-05-20", rsi: 64, bbPos: 79 },
+  { type: "us", ticker: "AMD", name: "AMD", sector: "AI 반도체", qty: 16, avgCost: 150, price: 176, chg: -0.6, cur: "USD", buyDate: "2024-07-01", rsi: 52, bbPos: 47 },
+  { type: "us", ticker: "MU", name: "Micron", sector: "메모리/반도체", qty: 22, avgCost: 95, price: 130, chg: 3.4, cur: "USD", buyDate: "2024-09-10", rsi: 71, bbPos: 93 },
+  { type: "us", ticker: "MSFT", name: "Microsoft", sector: "소프트웨어", qty: 10, avgCost: 380, price: 508, chg: 0.8, cur: "USD", buyDate: "2023-11-15", rsi: 58, bbPos: 62 },
+  { type: "us", ticker: "GOOGL", name: "Alphabet", sector: "소프트웨어", qty: 16, avgCost: 158, price: 198, chg: 0.5, cur: "USD", buyDate: "2024-03-22", rsi: 55, bbPos: 58 },
+  { type: "us", ticker: "PLTR", name: "Palantir", sector: "소프트웨어", qty: 45, avgCost: 28, price: 61, chg: 2.2, cur: "USD", buyDate: "2024-08-05", rsi: 73, bbPos: 96 },
+  { type: "us", ticker: "AMZN", name: "Amazon", sector: "소비재", qty: 14, avgCost: 168, price: 218, chg: 0.9, cur: "USD", buyDate: "2024-01-18", rsi: 57, bbPos: 61 },
+  { type: "us", ticker: "META", name: "Meta Platforms", sector: "미디어", qty: 5, avgCost: 470, price: 715, chg: 1.4, cur: "USD", buyDate: "2024-04-09", rsi: 62, bbPos: 74 },
+  { type: "us", ticker: "TSLA", name: "Tesla", sector: "전기차", qty: 10, avgCost: 245, price: 322, chg: -1.2, cur: "USD", buyDate: "2024-06-14", rsi: 48, bbPos: 41 },
+  { type: "us", ticker: "LLY", name: "Eli Lilly", sector: "바이오/헬스케어", qty: 3, avgCost: 720, price: 880, chg: 0.7, cur: "USD", buyDate: "2024-02-28", rsi: 54, bbPos: 56 },
+  { type: "us", ticker: "IONQ", name: "IonQ", sector: "양자컴퓨팅", qty: 80, avgCost: 22, price: 37, chg: -3.1, cur: "USD", buyDate: "2025-01-20", rsi: 44, bbPos: 28 },
+  { type: "etf", ticker: "SCHD", name: "Schwab US Dividend ETF", sector: "배당주 ETF", qty: 40, avgCost: 26, price: 28.5, chg: 0.3, cur: "USD", buyDate: "2024-10-02", rsi: 53, bbPos: 55 },
+  { type: "kr", ticker: "005930.KS", name: "삼성전자", sector: "메모리/반도체", qty: 80, avgCost: 64000, price: 78000, chg: 1.2, cur: "KRW", buyDate: "2024-03-05", rsi: 60, bbPos: 70 },
+  { type: "kr", ticker: "000660.KS", name: "SK하이닉스", sector: "메모리/반도체", qty: 12, avgCost: 150000, price: 235000, chg: 2.9, cur: "KRW", buyDate: "2024-05-11", rsi: 66, bbPos: 84 },
+  { type: "kr", ticker: "373220.KS", name: "LG에너지솔루션", sector: "2차전지", qty: 8, avgCost: 410000, price: 352000, chg: -0.9, cur: "KRW", buyDate: "2024-04-18", rsi: 41, bbPos: 24 },
+  { type: "crypto", ticker: "BTC", name: "Bitcoin", sector: "크립토", qty: 0.15, avgCost: 56000, price: 98000, chg: 1.5, cur: "USD", buyDate: "2024-01-25", rsi: 63, bbPos: 76 },
+  { type: "crypto", ticker: "ETH", name: "Ethereum", sector: "크립토", qty: 2, avgCost: 2900, price: 3450, chg: -1.0, cur: "USD", buyDate: "2024-06-30", rsi: 47, bbPos: 38 },
 ];
 
 /* feedback / waitlist — POSTs to /api/feedback (forwards to your webhook).
@@ -648,8 +661,8 @@ export default function App() {
   const addHolding = () => { setHoldings((p) => [...p, { id: uid(), type: "us", ticker: "", name: "", sector: "Technology", qty: 0, avgCost: null, buyDate: null, price: null, cur: "USD", chg: null, live: false }]); track("add_holding"); };
   const loadSample = useCallback(() => {
     setPreBackup((prev) => prev || { holdings, cash }); // remember the user's real data (once)
-    setHoldings(SAMPLE_HOLDINGS.map((h) => ({ id: uid(), ...h, buyDate: null, price: null, chg: null, live: false })));
-    setCash([{ id: uid(), label: "예수금", cur: "USD", amount: 3000 }]);
+    setHoldings(SAMPLE_HOLDINGS.map((h) => ({ id: uid(), live: true, ...h }))); // prices pre-filled → full dashboard instantly
+    setCash([{ id: uid(), label: "달러 예수금", cur: "USD", amount: 4000 }, { id: uid(), label: "원화 예수금", cur: "KRW", amount: 6000000 }]);
     setPreviewMode(true);
     setShowWelcome(false); setWelcomeDismissed(true);
     track("load_sample");
@@ -1447,47 +1460,40 @@ function GoalCard({ th, goal, setGoal, totalAssets, displayCur, conv }) {
 /* ------------------------------------------------------------------ *
  *  BENCHMARK (today's performance vs indices)                         *
  * ------------------------------------------------------------------ */
-/* Kalshi-style overlay: glowing current-value dots + per-line hover labels */
-function KalshiOverlay(props) {
-  const { formattedGraphicalItems, offset, lines, hoverIdx, th } = props;
-  if (!formattedGraphicalItems || !offset) return null;
-  const halos = [], dots = [], labels = [];
-  let hoverX = null;
-  formattedGraphicalItems.forEach((it) => {
-    const key = it && it.props && it.props.dataKey;
-    const pts = (it && it.props && it.props.points) || [];
-    const meta = lines.find((l) => l.key === key);
-    if (!meta || !pts.length) return;
-    const last = pts[pts.length - 1];
-    if (last && last.x != null && last.y != null) {
-      halos.push(<circle key={key + "-halo2"} cx={last.x} cy={last.y} r={15} fill={meta.color} opacity={0.12} />);
-      halos.push(<circle key={key + "-halo1"} cx={last.x} cy={last.y} r={9} fill={meta.color} opacity={0.3} />);
-      dots.push(<circle key={key + "-end"} cx={last.x} cy={last.y} r={5} fill={meta.color} stroke="#fff" strokeWidth={1.8} />);
-    }
-    if (hoverIdx != null && pts[hoverIdx] && pts[hoverIdx].x != null) {
-      const p = pts[hoverIdx]; hoverX = p.x;
-      const pct = (p.value ?? 100) - 100;
-      const right = p.x > offset.left + offset.width * 0.6;
-      labels.push(<circle key={key + "-hd"} cx={p.x} cy={p.y} r={4} fill={meta.color} stroke="#fff" strokeWidth={1.6} />);
-      labels.push(
-        <text key={key + "-hl"} x={right ? p.x - 8 : p.x + 8} y={p.y - 6} textAnchor={right ? "end" : "start"}
-          fontSize={11} fontWeight={800} fill={meta.color} style={{ paintOrder: "stroke", stroke: th.panel, strokeWidth: 3.5 }}>
-          {`${meta.name} ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`}
-        </text>
-      );
-    }
-  });
+/* Kalshi-style: glowing end dot (always) + per-line hover label (via recharts dot/activeDot API) */
+function EndDot(props) {
+  const { cx, cy, index, color, lastIndex } = props;
+  if (cx == null || cy == null || index !== lastIndex) return null;
   return (
-    <g>
-      {hoverX != null && <line x1={hoverX} x2={hoverX} y1={offset.top} y2={offset.top + offset.height} stroke={th.textDim} strokeWidth={1} strokeDasharray="3 3" />}
-      {halos}{dots}{labels}
+    <g style={{ pointerEvents: "none" }}>
+      <circle cx={cx} cy={cy} r={15} fill={color} opacity={0.12} />
+      <circle cx={cx} cy={cy} r={9} fill={color} opacity={0.3} />
+      <circle cx={cx} cy={cy} r={5} fill={color} stroke="#fff" strokeWidth={1.8} />
     </g>
   );
+}
+function HoverDot(props) {
+  const { cx, cy, index, value, color, name, th, n } = props;
+  if (cx == null || cy == null) return null;
+  const pct = (value ?? 100) - 100;
+  const right = n && index > n * 0.62;
+  return (
+    <g style={{ pointerEvents: "none" }}>
+      <circle cx={cx} cy={cy} r={4} fill={color} stroke="#fff" strokeWidth={1.6} />
+      <text x={right ? cx - 9 : cx + 9} y={cy - 6} textAnchor={right ? "end" : "start"}
+        fontSize={11.5} fontWeight={800} fill={color} style={{ paintOrder: "stroke", stroke: th.panel, strokeWidth: 4 }}>
+        {`${name} ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}%`}
+      </text>
+    </g>
+  );
+}
+function DateTip({ active, label, th }) {
+  if (!active) return null;
+  return <div style={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, padding: "3px 10px", fontSize: 11.5, fontWeight: 700, color: th.textDim }}>{label}</div>;
 }
 
 function BenchmarkCard({ th, dayChange, benchmarks, perf }) {
   const [mode, setMode] = useState("bar");
-  const [hoverIdx, setHoverIdx] = useState(null);
   const data = [
     { label: "내 포트폴리오", v: dayChange == null ? null : +dayChange.toFixed(2), me: true },
     ...BENCH.map((b) => ({ label: b.label, v: benchmarks[b.sym]?.chg != null ? +benchmarks[b.sym].chg.toFixed(2) : null, me: false })),
@@ -1528,17 +1534,16 @@ function BenchmarkCard({ th, dayChange, benchmarks, perf }) {
           <>
             <div style={{ height: 224 }}>
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={series} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}
-                  onMouseMove={(s) => setHoverIdx(s && s.activeTooltipIndex != null ? s.activeTooltipIndex : null)}
-                  onMouseLeave={() => setHoverIdx(null)}>
+                <AreaChart data={series} margin={{ top: 10, right: 16, left: -8, bottom: 0 }}>
                   <XAxis dataKey="t" tick={{ fontSize: 10, fill: th.textFaint }} minTickGap={36} axisLine={false} tickLine={false} />
                   <YAxis tick={{ fontSize: 10, fill: th.textFaint }} axisLine={false} tickLine={false} width={34} domain={["auto", "auto"]} />
                   <ReferenceLine y={100} stroke={th.border} strokeDasharray="3 3" />
-                  <Tooltip cursor={false} content={() => null} />
+                  <Tooltip cursor={{ stroke: th.textDim, strokeWidth: 1, strokeDasharray: "3 3" }} content={<DateTip th={th} />} />
                   {LINES.map((l) => (series.some((r) => r[l.key] != null) &&
-                    <Area key={l.key} type="monotone" dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={l.width} fill="none" dot={false} activeDot={false} isAnimationActive={false} connectNulls />
+                    <Area key={l.key} type="monotone" dataKey={l.key} name={l.name} stroke={l.color} strokeWidth={l.width} fill="none" isAnimationActive={false} connectNulls
+                      dot={<EndDot color={l.color} lastIndex={series.length - 1} />}
+                      activeDot={<HoverDot color={l.color} name={l.name} th={th} n={series.length} />} />
                   ))}
-                  <Customized component={(p) => <KalshiOverlay {...p} lines={LINES} hoverIdx={hoverIdx} th={th} />} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
