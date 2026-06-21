@@ -599,40 +599,47 @@ export default function App() {
   const valueOf = useCallback((h) => (h.price == null || !h.qty ? 0 : conv(h.price * h.qty, h.cur)), [conv]);
   const costOf = useCallback((h) => (h.avgCost == null || !h.qty ? 0 : conv(h.avgCost * h.qty, h.cur)), [conv]);
 
-  const positionsValue = useMemo(() => holdings.reduce((s, h) => s + valueOf(h), 0), [holdings, valueOf]);
-  const positionsCost = useMemo(() => holdings.reduce((s, h) => s + costOf(h), 0), [holdings, costOf]);
+  /* holdings the user has checked-in for aggregation (계좌별 보기). included===false → excluded everywhere except the table row */
+  const activeHoldings = useMemo(() => holdings.filter((h) => h.included !== false), [holdings]);
+
+  const positionsValue = useMemo(() => activeHoldings.reduce((s, h) => s + valueOf(h), 0), [activeHoldings, valueOf]);
+  const positionsCost = useMemo(() => activeHoldings.reduce((s, h) => s + costOf(h), 0), [activeHoldings, costOf]);
   const cashValue = useMemo(() => cash.reduce((s, c) => s + conv(c.amount || 0, c.cur), 0), [cash, conv]);
   const totalAssets = positionsValue + cashValue;
   const cashPct = totalAssets ? (cashValue / totalAssets) * 100 : 0;
   const totalReturn = positionsCost ? ((positionsValue - positionsCost) / positionsCost) * 100 : null;
 
+  /* full net worth (ALL holdings) — used for the daily 자산 추이 snapshot so the trend isn't distorted by the 계좌별 보기 filter */
+  const fullPositionsValue = useMemo(() => holdings.reduce((s, h) => s + valueOf(h), 0), [holdings, valueOf]);
+  const snapshotTotal = fullPositionsValue + cashValue;
+
   /* record one net-worth snapshot per day (stored in USD base) */
   useEffect(() => {
-    if (!hydrated || !totalAssets) return;
-    const usd = displayCur === "USD" ? totalAssets : totalAssets / rate;
+    if (!hydrated || !snapshotTotal) return;
+    const usd = displayCur === "USD" ? snapshotTotal : snapshotTotal / rate;
     const today = new Date().toISOString().slice(0, 10);
     setSnapshots((prev) => {
       const last = prev[prev.length - 1];
       if (last && last.t === today && Math.abs(last.v - usd) < 0.01) return prev;
       return [...prev.filter((s) => s.t !== today), { t: today, v: usd }].slice(-180);
     });
-  }, [hydrated, totalAssets, rate, displayCur]);
+  }, [hydrated, snapshotTotal, rate, displayCur]);
 
   const dayChange = useMemo(() => {
     let w = 0, sum = 0;
-    holdings.forEach((h) => { const v = valueOf(h); if (h.chg != null && v) { w += v; sum += v * h.chg; } });
+    activeHoldings.forEach((h) => { const v = valueOf(h); if (h.chg != null && v) { w += v; sum += v * h.chg; } });
     return w ? sum / w : null;
-  }, [holdings, valueOf]);
+  }, [activeHoldings, valueOf]);
 
   /* unified leaves for heatmap + donut (positions + cash) */
   const leaves = useMemo(() => {
-    const arr = holdings.filter((h) => h.ticker).map((h) => ({
+    const arr = activeHoldings.filter((h) => h.ticker).map((h) => ({
       id: h.id, ticker: h.ticker, name: h.name, sector: h.sector,
       value: valueOf(h), metric: heatMode === "return" ? returnPct(h) : h.chg,
     })).filter((x) => x.value > 0);
     if (cashValue > 0) arr.push({ id: "__cash", ticker: "CASH", name: "현금", sector: "Cash", value: cashValue, metric: null });
     return arr;
-  }, [holdings, valueOf, heatMode, cashValue]);
+  }, [activeHoldings, valueOf, heatMode, cashValue]);
 
   const sectorData = useMemo(() => {
     const m = {};
@@ -643,15 +650,15 @@ export default function App() {
 
   /* per-holding allocation for the donut (#종목별 자산 비중) */
   const holdingAllocValue = useMemo(() => {
-    const rows = holdings.filter((h) => h.ticker && valueOf(h) > 0).map((h) => ({ sector: bareCode(h.ticker), value: valueOf(h) }));
+    const rows = activeHoldings.filter((h) => h.ticker && valueOf(h) > 0).map((h) => ({ sector: bareCode(h.ticker), value: valueOf(h) }));
     const tot = rows.reduce((a, b) => a + b.value, 0);
     return rows.map((r) => ({ ...r, pct: tot ? (r.value / tot) * 100 : 0 })).sort((a, b) => b.value - a.value);
-  }, [holdings, valueOf]);
+  }, [activeHoldings, valueOf]);
   const holdingAllocCost = useMemo(() => {
-    const rows = holdings.filter((h) => h.ticker && costOf(h) > 0).map((h) => ({ sector: bareCode(h.ticker), value: costOf(h) }));
+    const rows = activeHoldings.filter((h) => h.ticker && costOf(h) > 0).map((h) => ({ sector: bareCode(h.ticker), value: costOf(h) }));
     const tot = rows.reduce((a, b) => a + b.value, 0);
     return rows.map((r) => ({ ...r, pct: tot ? (r.value / tot) * 100 : 0 })).sort((a, b) => b.value - a.value);
-  }, [holdings, costOf]);
+  }, [activeHoldings, costOf]);
   const holdingColorMap = useMemo(() => {
     const map = {}; let i = 0;
     holdingAllocValue.forEach((r) => { if (!map[r.sector]) map[r.sector] = PALETTE[i++ % PALETTE.length]; });
@@ -675,6 +682,8 @@ export default function App() {
     track("exit_preview");
   }, [preBackup]);
   const updateHolding = (id, patch) => setHoldings((p) => p.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  const allIncluded = holdings.length > 0 && holdings.every((h) => h.included !== false);
+  const toggleAllIncluded = () => { const next = !allIncluded; setHoldings((p) => p.map((h) => ({ ...h, included: next }))); };
   const removeHolding = (id) => setHoldings((p) => p.filter((h) => h.id !== id));
 
   const addCash = () => setCash((p) => [...p, { id: uid(), label: "", cur: "USD", amount: 0 }]);
@@ -717,18 +726,18 @@ export default function App() {
   const colorMap = useMemo(() => buildColorMap(sectorData.map((d) => d.sector)), [sectorData]);
   const heldSet = useMemo(() => new Set(holdings.map((h) => (h.ticker || "").toUpperCase()).filter(Boolean)), [holdings]);
   const ideas = useMemo(() => buildIdeas(sectorData, heldSet), [sectorData, heldSet]);
-  const perfSeries = useMemo(() => buildPerf(histMap, holdings, rate), [histMap, holdings, rate]);
+  const perfSeries = useMemo(() => buildPerf(histMap, activeHoldings, rate), [histMap, activeHoldings, rate]);
 
   /* per-holding weights by cost basis vs current value (#4) */
   const weightRows = useMemo(() => {
-    const tCost = holdings.reduce((s, h) => s + costOf(h), 0);
-    const tVal = holdings.reduce((s, h) => s + valueOf(h), 0);
-    return holdings.filter((h) => h.ticker && (valueOf(h) > 0 || costOf(h) > 0)).map((h) => ({
+    const tCost = activeHoldings.reduce((s, h) => s + costOf(h), 0);
+    const tVal = activeHoldings.reduce((s, h) => s + valueOf(h), 0);
+    return activeHoldings.filter((h) => h.ticker && (valueOf(h) > 0 || costOf(h) > 0)).map((h) => ({
       id: h.id, ticker: h.ticker, name: h.name,
       costW: tCost ? (costOf(h) / tCost) * 100 : 0,
       valW: tVal ? (valueOf(h) / tVal) * 100 : 0,
     })).sort((a, b) => b.valW - a.valW);
-  }, [holdings, costOf, valueOf]);
+  }, [activeHoldings, costOf, valueOf]);
 
   /* FX gain/loss in display currency (#3) — needs 매수일 + 평단가 on foreign holdings */
   const fxPnl = useMemo(() => {
@@ -741,7 +750,7 @@ export default function App() {
       return null;
     };
     let priceP = 0, fxP = 0, n = 0, skipped = 0;
-    holdings.forEach((h) => {
+    activeHoldings.forEach((h) => {
       const qty = Number(h.qty) || 0;
       if (!qty || h.avgCost == null || h.price == null) return;
       if (h.cur === displayCur) return;
@@ -754,7 +763,7 @@ export default function App() {
       n++;
     });
     return { priceP, fxP, total: priceP + fxP, n, skipped, hasFxHist: !!fxHist };
-  }, [holdings, histMap, rate, displayCur]);
+  }, [activeHoldings, histMap, rate, displayCur]);
 
   /* backup / restore (#14) */
   const exportData = useCallback(() => {
@@ -897,7 +906,7 @@ export default function App() {
           <WelcomeBanner th={th} onSample={loadSample} onAdd={addHolding} onClose={() => { setWelcomeDismissed(true); setShowWelcome(false); }} />
         )}
         {/* Summary band */}
-        <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} count={holdings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} />
+        <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} count={activeHoldings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} />
         {/* Heatmap — full width */}
         <div id="sec-heatmap" className="sec">
         <Panel th={th} title="Heatmap" glow
@@ -932,10 +941,11 @@ export default function App() {
           ) : (
             <>
               {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
-              <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} advanced={advanced} hideAmt={hideAmt} />
+              <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} advanced={advanced} hideAmt={hideAmt} onToggleAll={toggleAllIncluded} allIncluded={allIncluded} />
               <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
                 티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다.
                 <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다. <b style={{ color: th.textDim }}>심화</b>를 켜면 매수일·RSI·BB%가 보이고, 다 넣은 뒤엔 <b style={{ color: th.textDim }}>▴ 접기</b>로 정리하세요.
+                <br />맨 왼쪽 <b style={{ color: th.textDim }}>체크박스</b>를 끄면 그 종목은 집계·히트맵에서 빠져요 — 계좌별로 골라 볼 때 쓰세요 (헤더 체크박스로 전체 선택/해제).
               </p>
             </>
           )}
@@ -1153,7 +1163,7 @@ function Donut({ data, th, colorMap }) {
 /* ------------------------------------------------------------------ *
  *  TABLE                                                              *
  * ------------------------------------------------------------------ */
-function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill, advanced, hideAmt }) {
+function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill, advanced, hideAmt, onToggleAll, allIncluded }) {
   const mobile = useIsMobile(720);
   if (mobile) return (<><datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist><PortfolioCards holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={onUpdate} onRemove={onRemove} onAutoFill={onAutoFill} advanced={advanced} /></>);
   const head = (t) => ({ textAlign: t || "left", fontSize: 10.5, fontWeight: 600, color: th.textFaint, padding: "8px 8px", textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap" });
@@ -1161,8 +1171,9 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
   return (
     <div style={{ overflowX: "auto" }}>
       <datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist>
-      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1180 }}>
+      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 1220 }}>
         <thead><tr>
+          <th style={head("center")} title="체크된 종목만 집계·히트맵에 반영 (계좌별 보기)"><input type="checkbox" checked={allIncluded} onChange={onToggleAll} style={{ accentColor: th.accent, cursor: "pointer", width: 15, height: 15 }} /></th>
           <th style={head()}>유형</th><th style={head()}>티커</th><th style={head()}>이름</th><th style={head()}>섹터</th>
           <th style={head("right")}>수량</th><th style={head("right")}>평단가</th>{advanced && <th style={head("center")} title="매수일을 넣으면 벤치마크 추이에 실제 보유 시점이 반영됩니다">매수일</th>}<th style={head("right")}>현재 주가</th>
           <th style={head("right")}>일간%</th>{advanced && <th style={head("right")} title="RSI(14)">RSI</th>}{advanced && <th style={head("right")} title="볼린저밴드 위치 (20일, 2σ) — %B">BB%</th>}<th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
@@ -1170,8 +1181,10 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
         <tbody>
           {holdings.map((h) => {
             const v = valueOf(h), wpct = totalAssets ? (v / totalAssets) * 100 : 0, ret = returnPct(h);
+            const off = h.included === false;
             return (
-              <tr key={h.id} className="ph-row">
+              <tr key={h.id} className="ph-row" style={{ opacity: off ? 0.42 : 1 }}>
+                <td style={{ ...cell, textAlign: "center" }}><input type="checkbox" checked={!off} onChange={(e) => onUpdate(h.id, { included: e.target.checked })} style={{ accentColor: th.accent, cursor: "pointer", width: 15, height: 15 }} title={off ? "집계에서 제외됨 — 체크하면 포함" : "집계·히트맵에 포함됨"} /></td>
                 <td style={cell}><select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 62)}><option value="us">미국</option><option value="kr">한국</option><option value="etf">ETF</option><option value="crypto">크립토</option></select></td>
                 <td style={cell}><TickerInput th={th} value={h.ticker} type={h.type} width={92} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : "AAPL"}
                   onText={(val) => onUpdate(h.id, { ticker: val, live: false })}
@@ -1200,7 +1213,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
               </tr>
             );
           })}
-          {!holdings.length && <tr><td colSpan={advanced ? 15 : 12} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
+          {!holdings.length && <tr><td colSpan={advanced ? 16 : 13} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
         </tbody>
       </table>
     </div>
@@ -1931,8 +1944,9 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
         const v = valueOf(h), wpct = totalAssets ? (v / totalAssets) * 100 : 0, ret = returnPct(h);
         const metric = (label, val, color) => <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, color: th.textFaint }}>{label}</span><span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: color || th.text }}>{val}</span></div>;
         return (
-          <div key={h.id} className="ph-card" style={{ border: `1px solid ${th.border}`, borderRadius: 12, padding: 13, background: th.panel }}>
-            <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 10 }}>
+          <div key={h.id} className="ph-card" style={{ border: `1px solid ${th.border}`, borderRadius: 12, padding: 13, background: th.panel, opacity: h.included === false ? 0.5 : 1 }}>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              <input type="checkbox" checked={h.included !== false} onChange={(e) => onUpdate(h.id, { included: e.target.checked })} style={{ accentColor: th.accent, cursor: "pointer", width: 18, height: 18, flexShrink: 0 }} title="집계·히트맵 포함" />
               <div style={{ flex: 1 }}>
                 <TickerInput th={th} value={h.ticker} type={h.type} width={110} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : "AAPL"}
                   onText={(val) => onUpdate(h.id, { ticker: val, live: false })}
