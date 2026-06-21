@@ -26,6 +26,7 @@ function getSource() {
 function track(event, props) {
   try {
     if (typeof window === "undefined") return;
+    if (window.posthog) window.posthog.capture(event, props || {});
     if (window.plausible) window.plausible(event, props ? { props } : undefined);
     if (window.va) window.va("event", { name: event, ...(props || {}) });
     if (window.gtag) window.gtag("event", event, props || {});
@@ -687,6 +688,7 @@ export default function App() {
       updateHolding(id, { name: CRYPTO_NAMES[sym] || sym, sector: "Crypto" });
       const cd = await fetchCrypto([sym]);
       if (cd[sym]) updateHolding(id, { price: cd[sym].price, chg: cd[sym].chg, cur: "USD", live: true });
+      track("ticker_resolved", { ticker: sym, type: "crypto" });
       return;
     }
     const info = await lookupTicker(raw);
@@ -704,6 +706,7 @@ export default function App() {
     }
     const sd = await fetchStocks([sym]);
     if (sd[sym]) updateHolding(id, { price: sd[sym].price, chg: sd[sym].chg, mkt: sd[sym].mkt, ...(sd[sym].cur ? { cur: sd[sym].cur } : {}), live: true });
+    if (info || sd[sym]) track("ticker_resolved", { ticker: sym });
     /* AI refines the theme when it isn't one of the curated tickers */
     if (!THEME_MAP[sym]) {
       const theme = await classifyTicker(sym, nm);
