@@ -14,6 +14,14 @@ const PROMPT = (symbol, name) =>
 const DESC_PROMPT = (symbol, name) =>
   `${symbol}(${name || ""}) 종목을 투자자 관점에서 2~3문장으로 아주 간단히 설명해줘. 무엇을 하는 회사/자산인지, 핵심 사업이나 투자 포인트를 한국어로. 마크다운 없이 평문으로만.`;
 
+const DIV_PROMPT = (symbol, name) =>
+  `${symbol}(${name || "(미상)"}) 종목/ETF/리츠의 최근 12개월(TTM) 시가 기준 연간 배당수익률(dividend yield)을 퍼센트 숫자로만 추정해서 답해줘.
+규칙:
+- 정말로 배당을 주지 않는 종목(성장주, 무배당 기업, 대부분의 암호화폐, 금/은 같은 무수익 현물자산 등)이면 정확히 0 이라고만 답해.
+- 배당을 주는 종목이면 숫자만 출력해(예: 3.5). % 기호나 다른 텍스트는 절대 포함하지 마.
+- 정확한 최신 수치를 모르면, 알고 있는 최근 분기/연간 배당 데이터를 기반으로 가장 근접한 추정치를 제공해. 모르겠다고 답하지 말고 합리적인 추정 숫자를 줘.
+- 숫자 하나만 출력. 설명 금지.`;
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "s-maxage=604800");
@@ -21,17 +29,23 @@ export default async function handler(req, res) {
   const mode = (req.query.mode || "").toString();
   const name = (req.query.name || "").toString();
   const key = process.env.ANTHROPIC_API_KEY;
-  if (!symbol || !key) return res.status(200).json({ theme: null });
+  if (!symbol || !key) return res.status(200).json(mode === "div" ? { yield: null } : { theme: null });
   try {
+    const prompt = mode === "desc" ? DESC_PROMPT : mode === "div" ? DIV_PROMPT : PROMPT;
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: mode === "desc" ? 220 : 40, messages: [{ role: "user", content: (mode === "desc" ? DESC_PROMPT : PROMPT)(symbol, name) }] }),
+      body: JSON.stringify({ model: "claude-haiku-4-5-20251001", max_tokens: mode === "desc" ? 220 : 20, messages: [{ role: "user", content: prompt(symbol, name) }] }),
     });
     const j = await r.json();
     const text = (j.content || []).filter((b) => b.type === "text").map((b) => b.text).join("").trim();
-    return res.status(200).json(mode === "desc" ? { text: text || null } : { theme: text || null });
+    if (mode === "desc") return res.status(200).json({ text: text || null });
+    if (mode === "div") {
+      const n = parseFloat((text || "").replace(/[^0-9.]/g, ""));
+      return res.status(200).json({ yield: Number.isFinite(n) ? n : null });
+    }
+    return res.status(200).json({ theme: text || null });
   } catch {
-    return res.status(200).json({ theme: null });
+    return res.status(200).json(mode === "div" ? { yield: null } : { theme: null });
   }
 }

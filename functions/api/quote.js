@@ -1,7 +1,5 @@
-// Cloudflare Pages Function -> /api/quote (pre/regular/after-hours/overnight aware)
+// Cloudflare Pages Function -> /api/quote (pre/regular/after-hours/overnight aware, US + KR)
 
-// Don't trust Yahoo's `marketState` field — it can be stale/wrong on the chart endpoint.
-// Instead compute the session ourselves from the real US Eastern wall-clock time.
 function usSessionFromET() {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(now);
@@ -15,32 +13,47 @@ function usSessionFromET() {
   return "CLOSED";
 }
 
-function parseQuote(j) {
+function krSessionFromKST() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  const wd = get("weekday"); const mins = Number(get("hour")) * 60 + Number(get("minute"));
+  if (wd === "Sat" || wd === "Sun") return "CLOSED";
+  if (mins >= 7 * 60 + 30 && mins < 8 * 60 + 30) return "PRE";
+  if (mins >= 9 * 60 && mins < 15 * 60 + 30) return "REGULAR";
+  if (mins >= 15 * 60 + 40 && mins < 16 * 60) return "POST";
+  if (mins >= 16 * 60 && mins < 18 * 60) return "POSTPOST";
+  return "CLOSED";
+}
+
+function parseQuote(j, sym) {
   const result = j?.chart?.result?.[0];
   const meta = result?.meta;
   if (meta?.regularMarketPrice == null) return null;
   const regular = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
-  const state = usSessionFromET(); // PRE | REGULAR | POST | POSTPOST | CLOSED — computed locally, not from Yahoo
+  const isKR = /\.(KS|KQ)$/i.test(sym || "");
+  const state = isKR ? krSessionFromKST() : usSessionFromET();
 
-  // We do NOT rely on meta.postMarketPrice/preMarketPrice — the /v8/finance/chart
-  // endpoint's meta object doesn't reliably carry those fields (that's the /v7/quote
-  // schema). Instead we always take the latest non-null close from the minute-bar
-  // series, which (with includePrePost=true) already reflects whichever session is
-  // currently live. Only the comparison baseline changes by session.
   const closes = result?.indicators?.quote?.[0]?.close || [];
   let latest = null;
   for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
   const price = latest != null ? latest : regular;
 
   let base, mkt;
-  // Extended-hours prices (pre/post/overnight) are always compared against the most
-  // recent REGULAR-session close, matching Yahoo's own display convention.
-  if (state === "PRE") { base = regular; mkt = "프리장"; }
-  else if (state === "POST") { base = regular; mkt = "애프터장"; }
-  else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }
-  else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
-  else { base = prevClose; mkt = "장마감"; }
+  if (isKR) {
+    if (state === "PRE") { base = prevClose; mkt = "장전 시간외"; }
+    else if (state === "POST") { base = regular; mkt = "장후 시간외(종가)"; }
+    else if (state === "POSTPOST") { base = regular; mkt = "장후 시간외(단일가)"; }
+    else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
+    else { base = prevClose; mkt = "장마감"; }
+  } else {
+    if (state === "PRE") { base = regular; mkt = "프리장"; }
+    else if (state === "POST") { base = regular; mkt = "애프터장"; }
+    else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }
+    else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
+    else { base = prevClose; mkt = "장마감"; }
+  }
 
   return { price, chg: base ? ((price - base) / base) * 100 : null, cur: meta.currency || null, mkt };
 }
@@ -63,7 +76,7 @@ export async function onRequest(context) {
         clearTimeout(timer);
         if (!r.ok) return;
         const j = await r.json();
-        const q = parseQuote(j);
+        const q = parseQuote(j, sym);
         if (q) out[sym] = q;
       } catch { /* skip this symbol only */ }
     }));

@@ -191,6 +191,24 @@ const THEME_MAP = {
   "AVGO": "AI 반도체", "AMD": "AI 반도체", "TSM": "반도체 파운드리",
 };
 
+/* curated dividend-yield(%) fallback for well-known tickers — used when the AI estimate
+   (which needs ANTHROPIC_API_KEY) is unavailable or fails, so the feature still works
+   without an API key configured. Approximate TTM yields; users can always correct manually. */
+const DIV_YIELD_MAP = {
+  AAPL: 0.4, MSFT: 0.7, GOOGL: 0.4, GOOG: 0.4, AMZN: 0, META: 0.3, NVDA: 0.03, TSLA: 0,
+  AVGO: 1.0, AMD: 0, MU: 0.4, INTC: 0, IBM: 2.7, ORCL: 1.0, CSCO: 2.7, QCOM: 1.9,
+  JPM: 2.0, BAC: 2.2, WFC: 2.0, V: 0.7, MA: 0.5, KO: 2.8, PEP: 3.4, PG: 2.3, JNJ: 3.0,
+  XOM: 3.3, CVX: 4.0, PFE: 6.5, T: 4.0, VZ: 6.0, WMT: 1.0, HD: 2.2, MCD: 2.2, NKE: 2.0,
+  O: 5.6, SPG: 4.5, PLD: 3.7, AMT: 3.0, VICI: 5.5, NEE: 2.9, SO: 3.3,
+  SCHD: 3.5, JEPI: 7.5, JEPQ: 9.0, VYM: 2.8, HDV: 3.5, SPYD: 4.0, VIG: 1.8, DVY: 3.2,
+  SPY: 1.2, VOO: 1.2, QQQ: 0.6, VTI: 1.2, DIA: 1.7, IWM: 1.0,
+  GLD: 0, SLV: 0, IAU: 0,
+  // Korean large caps (approximate)
+  "005930.KS": 1.7, "000660.KS": 0.5, "373220.KS": 0.4, "005380.KS": 4.0, "000270.KS": 2.5,
+  "035420.KS": 0.2, "035720.KS": 0.5, "055550.KS": 4.5, "105560.KS": 4.2, "086790.KS": 4.8,
+  "017670.KS": 5.5, "030200.KS": 6.0, "096770.KS": 3.0,
+};
+
 
 
 const YH_SECTOR = {
@@ -301,19 +319,22 @@ async function fetchCrypto(symbols) {
 /* Parse a Yahoo /v8/finance/chart response into {price, chg, cur, mkt}.
    We do NOT trust meta.marketState — confirmed unreliable (e.g. it can report "REGULAR"
    well outside actual US trading hours). Instead we compute the live session ourselves
-   from real US Eastern wall-clock time via usMarketSession(), same as the header badge.
+   from real wall-clock time: US Eastern for US/ETF/crypto-quoted-in-USD tickers via
+   usMarketSession(), and KST via krMarketSession() for Korean (.KS/.KQ) tickers — each
+   market has its own trading hours, so a single shared session was wrong for KR stocks.
    We also don't rely on meta.postMarketPrice/preMarketPrice — the chart endpoint's
    `meta` object does not reliably expose those fields (they belong to the separate
    /v7/finance/quote schema). Instead we always take the LATEST non-null close from the
    minute-bar series (which, with includePrePost=true, already reflects whatever session
    is currently live). Only the *baseline* we compare against changes with the session. */
-function parseYahooChartQuote(j) {
+function parseYahooChartQuote(j, sym) {
   const result = j?.chart?.result?.[0];
   const meta = result?.meta;
   if (meta?.regularMarketPrice == null) return null;
   const regular = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
-  const state = usMarketSession().key; // PRE | REGULAR | POST | POSTPOST | CLOSED — our own clock, not Yahoo's
+  const isKR = /\.(KS|KQ)$/i.test(sym || "");
+  const state = isKR ? krMarketSession().key : usMarketSession().key; // PRE | REGULAR | POST | POSTPOST | CLOSED — our own clock, not Yahoo's
 
   const closes = result?.indicators?.quote?.[0]?.close || [];
   let latest = null;
@@ -322,17 +343,26 @@ function parseYahooChartQuote(j) {
 
   // baseline to diff against, and the Korean label, depend on which session we're in
   let base, mkt;
-  // Extended-hours prices (pre/post/overnight) are always compared against the most
-  // recent REGULAR-session close — this matches Yahoo's own display convention (the
-  // "+6.82%" vs "-7.34%" shown side-by-side on finance.yahoo.com use two different
-  // baselines: regular-session uses prevClose, but pre/post/overnight all use the
-  // latest regular close, since that's the reference point once the regular session
-  // has ended for the day).
-  if (state === "PRE") { base = regular; mkt = "프리장"; }
-  else if (state === "POST") { base = regular; mkt = "애프터장"; }       // after-hours right after the 4pm close
-  else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }   // late-night/overnight extended session
-  else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
-  else { base = prevClose; mkt = "장마감"; }
+  if (isKR) {
+    // KRX: 장전 시간외(07:30–08:30)는 전일종가 기준, 장후 시간외(15:40~18:00)는 당일종가 기준
+    if (state === "PRE") { base = prevClose; mkt = "장전 시간외"; }
+    else if (state === "POST") { base = regular; mkt = "장후 시간외(종가)"; }
+    else if (state === "POSTPOST") { base = regular; mkt = "장후 시간외(단일가)"; }
+    else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
+    else { base = prevClose; mkt = "장마감"; }
+  } else {
+    // US: extended-hours prices (pre/post/overnight) are always compared against the most
+    // recent REGULAR-session close — this matches Yahoo's own display convention (the
+    // "+6.82%" vs "-7.34%" shown side-by-side on finance.yahoo.com use two different
+    // baselines: regular-session uses prevClose, but pre/post/overnight all use the
+    // latest regular close, since that's the reference point once the regular session
+    // has ended for the day).
+    if (state === "PRE") { base = regular; mkt = "프리장"; }
+    else if (state === "POST") { base = regular; mkt = "애프터장"; }       // after-hours right after the 4pm close
+    else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }   // late-night/overnight extended session
+    else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
+    else { base = prevClose; mkt = "장마감"; }
+  }
 
   return { price, chg: base ? ((price - base) / base) * 100 : null, cur: meta.currency || null, mkt };
 }
@@ -355,7 +385,7 @@ async function fetchStocks(symbols) {
         const r = await fetch(proxyUrl);
         if (!r.ok) continue;
         const j = await r.json();
-        const q = parseYahooChartQuote(j);
+        const q = parseYahooChartQuote(j, sym);
         if (q) { out[sym] = q; break; }
       } catch { /* try next proxy */ }
     }
@@ -369,6 +399,20 @@ async function classifyTicker(symbol, name) {
     const r = await fetch(`/api/classify?symbol=${encodeURIComponent(symbol)}&name=${encodeURIComponent(name || "")}`);
     if (r.ok) { const j = await r.json(); if (j && j.theme) return j.theme; }
   } catch { /* none */ }
+  return null;
+}
+
+/* AI estimate of a ticker's TTM dividend yield (%) — lets the user skip manually
+   looking up and typing in 배당률 for every holding. Deploy build calls /api/classify?mode=div.
+   If that's unavailable (no ANTHROPIC_API_KEY configured, or the call fails), we fall back to
+   a curated static table for well-known tickers so the feature still works without an API key. */
+async function fetchDividendYield(symbol, name) {
+  try {
+    const r = await fetch(`/api/classify?mode=div&symbol=${encodeURIComponent(symbol)}&name=${encodeURIComponent(name || "")}`);
+    if (r.ok) { const j = await r.json(); if (j && typeof j.yield === "number") return j.yield; }
+  } catch { /* none */ }
+  const sym = (symbol || "").toUpperCase();
+  if (DIV_YIELD_MAP[sym] != null) return DIV_YIELD_MAP[sym];
   return null;
 }
 
@@ -610,6 +654,22 @@ function usMarketSession(d = new Date()) {
   return { key: "CLOSED", label: "장마감", kst: "" };
 }
 
+/* Korean market (KRX/KOSPI/KOSDAQ) session, computed from real KST wall-clock time.
+   정규장 09:00–15:30, 장전 시간외 07:30–08:30(전일종가 기준), 장후 시간외 15:40–16:00(당일종가 기준).
+   08:30–09:00과 15:30–15:40은 동시호가/거래정지 구간이라 "장마감"으로 묶어요. */
+function krMarketSession(d = new Date()) {
+  const kstParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(d);
+  const get = (t) => kstParts.find((p) => p.type === t)?.value;
+  const wd = get("weekday"); const mins = Number(get("hour")) * 60 + Number(get("minute"));
+  const isWeekend = wd === "Sat" || wd === "Sun";
+  if (isWeekend) return { key: "CLOSED", label: "휴장(주말)" };
+  if (mins >= 7 * 60 + 30 && mins < 8 * 60 + 30) return { key: "PRE", label: "장전 시간외" };
+  if (mins >= 9 * 60 && mins < 15 * 60 + 30) return { key: "REGULAR", label: "정규장" };
+  if (mins >= 15 * 60 + 40 && mins < 16 * 60) return { key: "POST", label: "장후 시간외(종가)" };
+  if (mins >= 16 * 60 && mins < 18 * 60) return { key: "POSTPOST", label: "장후 시간외(단일가)" };
+  return { key: "CLOSED", label: "장마감" };
+}
+
 export default function App() {
   const [themeName, setThemeName] = useState("dark");
   const th = THEMES[themeName];
@@ -621,8 +681,9 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [marketSession, setMarketSession] = useState(() => usMarketSession());
+  const [krSession, setKrSession] = useState(() => krMarketSession());
   useEffect(() => {
-    const t = setInterval(() => setMarketSession(usMarketSession()), 30000);
+    const t = setInterval(() => { setMarketSession(usMarketSession()); setKrSession(krMarketSession()); }, 30000);
     return () => clearInterval(t);
   }, []);
   const [savedAt, setSavedAt] = useState(null);
@@ -815,7 +876,7 @@ export default function App() {
     if (!raw) return;
     if (type === "crypto") {
       const sym = raw.toUpperCase();
-      updateHolding(id, { name: CRYPTO_NAMES[sym] || sym, sector: "Crypto" });
+      updateHolding(id, { name: CRYPTO_NAMES[sym] || sym, sector: "Crypto", divYield: 0 });
       const cd = await fetchCrypto([sym]);
       if (cd[sym]) updateHolding(id, { price: cd[sym].price, chg: cd[sym].chg, cur: "USD", live: true });
       track("ticker_resolved", { ticker: sym, type: "crypto" });
@@ -826,7 +887,7 @@ export default function App() {
       const raw_u = raw.toUpperCase();
       const sym = COMMODITY_ALIASES[raw] || COMMODITY_ALIASES[raw_u] || raw_u;
       const known = COMMODITY_MAP[sym];
-      updateHolding(id, { ticker: sym, name: known?.name || sym, sector: "현물자산" });
+      updateHolding(id, { ticker: sym, name: known?.name || sym, sector: "현물자산", divYield: 0 });
       const sd = await fetchStocks([sym]);
       if (sd[sym]) updateHolding(id, { price: sd[sym].price, chg: sd[sym].chg, mkt: sd[sym].mkt, ...(sd[sym].cur ? { cur: sd[sym].cur } : {}), live: true, sector: "현물자산" });
       track("ticker_resolved", { ticker: sym, type: "commodity" });
@@ -843,6 +904,7 @@ export default function App() {
       const sd = await fetchStocks([finalSym]);
       if (sd[finalSym]) updateHolding(id, { price: sd[finalSym].price, chg: sd[finalSym].chg, mkt: sd[finalSym].mkt, ...(sd[finalSym].cur ? { cur: sd[finalSym].cur } : {}), live: true, sector: "부동산" });
       track("ticker_resolved", { ticker: finalSym, type: "reit" });
+      fetchDividendYield(finalSym, patch.name).then((y) => { if (y != null) updateHolding(id, { divYield: y }); });
       return;
     }
     const info = await lookupTicker(raw);
@@ -866,6 +928,9 @@ export default function App() {
       const theme = await classifyTicker(sym, nm);
       if (theme) updateHolding(id, { sector: theme });
     }
+    /* AI estimate of dividend yield(%) — saves the user from looking it up manually.
+       Fire-and-forget: doesn't block the rest of autofill, fills in 배당률 once it resolves. */
+    fetchDividendYield(sym, nm).then((y) => { if (y != null) updateHolding(id, { divYield: y }); });
   }, []);
 
   const colorMap = useMemo(() => buildColorMap(sectorData.map((d) => d.sector)), [sectorData]);
@@ -1042,8 +1107,14 @@ export default function App() {
           {marketSession.kst && <span style={{ color: th.textFaint }}>({marketSession.kst})</span>}
         </span>
         <span style={{ color: th.textFaint }}>·</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: krSession.key === "REGULAR" ? th.heatPos : krSession.key === "CLOSED" ? th.textFaint : "#f59e0b", flexShrink: 0 }} />
+          한국장 <b style={{ color: th.text }}>{krSession.label}</b>
+        </span>
+        <span style={{ color: th.textFaint }}>·</span>
         <span>업데이트 {lastUpdate ? lastUpdate.toLocaleTimeString() : "—"} <span style={{ color: th.textFaint }}>(60초마다 자동)</span></span>
         {savedAt && !previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.heatPos }}>✓ 자동 저장됨</span></>}
+        <span style={{ color: th.textFaint, opacity: 0.5 }} title="배포 빌드 확인용 — 이 표시가 안 보이면 옛 버전입니다">· build:kr-div-2026-06-23</span>
         {previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.textFaint }}>미리보기(저장 안 됨)</span></>}
         <div style={{ flex: 1 }} />
         <button className="ph-btn navbtn" onClick={exportData} title="모든 데이터를 JSON 파일로 저장" style={{ background: "transparent", border: "none", color: th.textDim, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "3px 7px", borderRadius: 6 }}>⤓ 백업</button>
@@ -1341,7 +1412,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
         <thead><tr>
           <th style={head("center")} title="체크된 종목만 집계·히트맵에 반영 (계좌별 보기)"><input type="checkbox" checked={allIncluded} onChange={onToggleAll} style={{ accentColor: th.accent, cursor: "pointer", width: 15, height: 15 }} /></th>
           <th style={head()}>유형</th><th style={head()}>티커</th><th style={head()}>이름</th><th style={head()}>섹터</th>
-          <th style={head("right")}>수량</th><th style={head("right")}>평단가</th>{advanced && <th style={head("center")} title="매수일을 넣으면 벤치마크 추이에 실제 보유 시점이 반영됩니다">매수일</th>}{advanced && <th style={head("right")} title="연간 배당률(%) — 직접 입력하면 배당 수익 카드에 반영됩니다">배당률%</th>}<th style={head("right")}>현재 주가</th>
+          <th style={head("right")}>수량</th><th style={head("right")}>평단가</th>{advanced && <th style={head("center")} title="매수일을 넣으면 벤치마크 추이에 실제 보유 시점이 반영됩니다">매수일</th>}{advanced && <th style={head("right")} title="연간 배당률(%) — 종목 입력 시 AI가 자동으로 추정해 채워줘요. 틀렸으면 직접 수정 가능합니다">배당률%</th>}<th style={head("right")}>현재 주가</th>
           <th style={head("right")}>일간%</th>{advanced && <th style={head("right")} title="RSI(14)">RSI</th>}{advanced && <th style={head("right")} title="볼린저밴드 위치 (20일, 2σ) — %B">BB%</th>}<th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
         </tr></thead>
         <tbody>
@@ -1367,7 +1438,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                     <span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span>
                   </div>
                   {h.live && h.mkt && h.mkt !== "정규장" && (
-                    <div style={{ fontSize: 9.5, marginTop: 2, textAlign: "right", color: h.mkt === "프리장" ? th.accent : h.mkt === "애프터장" ? "#f59e0b" : h.mkt === "데이마켓" ? "#a78bfa" : th.textFaint }}>{h.mkt}</div>
+                    <div style={{ fontSize: 9.5, marginTop: 2, textAlign: "right", color: (h.mkt === "프리장" || h.mkt === "장전 시간외") ? th.accent : (h.mkt === "애프터장" || h.mkt === "장후 시간외(종가)") ? "#f59e0b" : (h.mkt === "데이마켓" || h.mkt === "장후 시간외(단일가)") ? "#a78bfa" : th.textFaint }}>{h.mkt}</div>
                   )}
                 </td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg, fontWeight: 600 }}>{h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}`}</td>
@@ -2317,12 +2388,12 @@ function DividendCard({ th, dv, displayCur, hideAmt }) {
             ))}
           </div>
           <p style={{ fontSize: 10.5, color: th.textFaint, marginTop: 10, lineHeight: 1.6 }}>
-            실제 지급 배당률·시점은 종목마다 달라요. 표(심화 모드)의 <b style={{ color: th.textDim }}>배당률%</b>를 직접 입력해 추정한 참고용 수치입니다.
+            종목을 입력하면 배당률을 AI가 자동으로 추정해 채워드려요. 실제 지급 배당률·시점은 종목마다 다르니, 부정확하면 표(심화 모드)의 <b style={{ color: th.textDim }}>배당률%</b>를 직접 수정해 주세요.
           </p>
         </>
       ) : (
         <div style={{ height: 110, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 12.5, textAlign: "center", lineHeight: 1.7 }}>
-          포트폴리오 표에서 <b style={{ color: th.textDim }}>심화</b>를 켜고 종목의 <b style={{ color: th.textDim }}>배당률%</b>을 입력하면<br />예상 연간·월 배당 수익을 보여드려요.
+          종목을 추가하면 AI가 배당률을 자동으로 추정해 채워드려요.<br />(심화 모드에서 <b style={{ color: th.textDim }}>배당률%</b> 칸으로 직접 수정도 가능)
         </div>
       )}
     </Panel>
