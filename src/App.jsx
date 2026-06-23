@@ -1272,8 +1272,6 @@ export default function App() {
         </div>
       </div>
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
-      <button className="ph-btn ph-primary" onClick={() => { setFeedbackOpen(true); track("feedback_open"); }} title="의견·건의 보내기"
-        style={{ position: "fixed", right: 20, bottom: 20, zIndex: 75, display: "flex", alignItems: "center", gap: 7, background: th.accent, color: "#fff", border: "2px solid rgba(255,255,255,.18)", padding: "13px 20px", borderRadius: 999, fontWeight: 800, fontSize: 14.5, cursor: "pointer", boxShadow: "0 8px 24px rgba(45,156,219,.45)" }}>💬 의견 보내기</button>
       {feedbackOpen && <FeedbackModal th={th} onClose={() => setFeedbackOpen(false)} />}
     </div>
   );
