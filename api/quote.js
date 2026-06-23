@@ -36,7 +36,9 @@ function parseQuote(j) {
   const price = latest != null ? latest : regular;
 
   let base, mkt;
-  if (state === "PRE") { base = prevClose; mkt = "프리장"; }
+  // Extended-hours prices (pre/post/overnight) are always compared against the most
+  // recent REGULAR-session close, matching Yahoo's own display convention.
+  if (state === "PRE") { base = regular; mkt = "프리장"; }
   else if (state === "POST") { base = regular; mkt = "애프터장"; }
   else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }
   else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }

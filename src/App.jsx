@@ -322,7 +322,13 @@ function parseYahooChartQuote(j) {
 
   // baseline to diff against, and the Korean label, depend on which session we're in
   let base, mkt;
-  if (state === "PRE") { base = prevClose; mkt = "프리장"; }
+  // Extended-hours prices (pre/post/overnight) are always compared against the most
+  // recent REGULAR-session close — this matches Yahoo's own display convention (the
+  // "+6.82%" vs "-7.34%" shown side-by-side on finance.yahoo.com use two different
+  // baselines: regular-session uses prevClose, but pre/post/overnight all use the
+  // latest regular close, since that's the reference point once the regular session
+  // has ended for the day).
+  if (state === "PRE") { base = regular; mkt = "프리장"; }
   else if (state === "POST") { base = regular; mkt = "애프터장"; }       // after-hours right after the 4pm close
   else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }   // late-night/overnight extended session
   else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
