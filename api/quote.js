@@ -1,5 +1,5 @@
 // Vercel Serverless Function -> /api/quote
-// Yahoo Finance price incl. pre-market / after-hours (server-side, no CORS).
+// Yahoo Finance price incl. pre-market / after-hours / overnight (server-side, no CORS).
 // Usage: /api/quote?symbols=AAPL,005930.KS
 
 function parseQuote(j) {
@@ -7,21 +7,32 @@ function parseQuote(j) {
   const meta = result?.meta;
   if (meta?.regularMarketPrice == null) return null;
   const regular = meta.regularMarketPrice;
-  const prev = meta.chartPreviousClose ?? meta.previousClose ?? regular;
+  const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
+  const state = meta.marketState || "REGULAR"; // PRE | REGULAR | POST | POSTPOST | CLOSED
+
+  // We do NOT rely on meta.postMarketPrice/preMarketPrice — the /v8/finance/chart
+  // endpoint's meta object doesn't reliably carry those fields (that's the /v7/quote
+  // schema). Instead we always take the latest non-null close from the minute-bar
+  // series, which (with includePrePost=true) already reflects whichever session is
+  // currently live. Only the comparison baseline changes by session.
   const closes = result?.indicators?.quote?.[0]?.close || [];
   let latest = null;
   for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
   const price = latest != null ? latest : regular;
-  const state = meta.marketState || "";
-  const mkt = state.startsWith("PRE") ? "프리장"
-    : state.startsWith("POST") ? "애프터장"
-    : state === "REGULAR" ? "정규장" : "장마감";
-  return { price, chg: prev ? ((price - prev) / prev) * 100 : null, cur: meta.currency || null, mkt };
+
+  let base, mkt;
+  if (state === "PRE") { base = prevClose; mkt = "프리장"; }
+  else if (state === "POST") { base = regular; mkt = "애프터장"; }
+  else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }
+  else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
+  else { base = prevClose; mkt = "장마감"; }
+
+  return { price, chg: base ? ((price - base) / base) * 100 : null, cur: meta.currency || null, mkt };
 }
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Cache-Control", "s-maxage=20, stale-while-revalidate=40");
+  res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=20");
   const raw = (req.query.symbols || "").toString();
   const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 60);
   if (!symbols.length) return res.status(400).json({ error: "no symbols" });

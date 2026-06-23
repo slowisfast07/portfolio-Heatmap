@@ -298,6 +298,38 @@ async function fetchCrypto(symbols) {
     return out;
   } catch { return {}; }
 }
+/* Parse a Yahoo /v8/finance/chart response into {price, chg, cur, mkt}.
+   IMPORTANT: we do NOT rely on meta.postMarketPrice / meta.preMarketPrice — the chart
+   endpoint's `meta` object does not reliably expose those fields (they belong to the
+   separate /v7/finance/quote schema), so checking them silently fails and falls back
+   to the stale regular-session price. Instead we always take the LATEST non-null close
+   from the minute-bar series (which, with includePrePost=true, already reflects
+   whatever session is currently live — pre/regular/post/overnight). Only the *baseline*
+   we compare against changes with the session, so "오늘 등락률" means the right thing
+   in each session. */
+function parseYahooChartQuote(j) {
+  const result = j?.chart?.result?.[0];
+  const meta = result?.meta;
+  if (meta?.regularMarketPrice == null) return null;
+  const regular = meta.regularMarketPrice;
+  const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
+  const state = meta.marketState || "REGULAR"; // PRE | REGULAR | POST | POSTPOST | CLOSED
+
+  const closes = result?.indicators?.quote?.[0]?.close || [];
+  let latest = null;
+  for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
+  const price = latest != null ? latest : regular;
+
+  // baseline to diff against, and the Korean label, depend on which session we're in
+  let base, mkt;
+  if (state === "PRE") { base = prevClose; mkt = "프리장"; }
+  else if (state === "POST") { base = regular; mkt = "애프터장"; }       // after-hours right after the 4pm close
+  else if (state === "POSTPOST") { base = regular; mkt = "데이마켓"; }   // late-night/overnight extended session
+  else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
+  else { base = prevClose; mkt = "장마감"; }
+
+  return { price, chg: base ? ((price - base) / base) * 100 : null, cur: meta.currency || null, mkt };
+}
 async function fetchStocks(symbols) {
   if (!symbols.length) return {};
   try {
@@ -310,35 +342,8 @@ async function fetchStocks(symbols) {
       const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
       const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(y)}`);
       const j = await r.json();
-      const result = j?.chart?.result?.[0];
-      const meta = result?.meta;
-      if (meta?.regularMarketPrice != null) {
-        const regular = meta.regularMarketPrice;
-        const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
-        const state = meta.marketState || "REGULAR"; // PRE | REGULAR | POST | POSTPOST | CLOSED
-
-        /* pick the price + baseline that actually matches the live session, instead of
-           always defaulting to the regular-session close. Yahoo gives separate
-           pre/post-market fields that reflect extended-hours trading. */
-        let price, base, mkt;
-        if (state === "PRE" && meta.preMarketPrice != null) {
-          price = meta.preMarketPrice; base = prevClose; mkt = "프리장";
-        } else if (state === "POST" && meta.postMarketPrice != null) {
-          // POST = the few hours right after the 4pm close (after-hours)
-          price = meta.postMarketPrice; base = regular; mkt = "애프터장";
-        } else if (state === "POSTPOST" && meta.postMarketPrice != null) {
-          // POSTPOST = late-night extended/overnight session ("데이마켓") that runs after-hours has ended
-          price = meta.postMarketPrice; base = regular; mkt = "데이마켓";
-        } else {
-          // REGULAR or CLOSED with no extended quote available — use the latest minute close if newer than the cached regular price
-          const closes = result?.indicators?.quote?.[0]?.close || [];
-          let latest = null;
-          for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
-          price = latest != null ? latest : regular; base = prevClose;
-          mkt = state === "REGULAR" ? "정규장" : "장마감";
-        }
-        out[sym] = { price, chg: base ? ((price - base) / base) * 100 : null, cur: meta.currency || null, mkt };
-      }
+      const q = parseYahooChartQuote(j);
+      if (q) out[sym] = q;
     } catch { /* skip */ }
   }));
   return out;
@@ -563,19 +568,32 @@ async function persist(d) {
  * ================================================================== */
 /* Determine current US market session from US Eastern wall-clock time, independent of any
    single ticker's fetch result — so the header can always show "지금이 무슨 시간대인지"
-   even before any quote has loaded. Matches Yahoo's PRE / REGULAR / POST / POSTPOST naming. */
+   even before any quote has loaded. Matches Yahoo's PRE / REGULAR / POST / POSTPOST naming.
+   Each label also carries the equivalent Korean-time (KST) window, since ET clocks shift by
+   an hour between EST/EDT — we compute the actual current KST offset from the same Date object
+   instead of hardcoding +9h from a fixed ET, so it's correct year-round. */
 function usMarketSession(d = new Date()) {
-  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(d);
-  const get = (t) => parts.find((p) => p.type === t)?.value;
-  const wd = get("weekday"); const h = Number(get("hour")); const m = Number(get("minute"));
+  const etParts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(d);
+  const get = (parts, t) => parts.find((p) => p.type === t)?.value;
+  const wd = get(etParts, "weekday"); const h = Number(get(etParts, "hour")); const m = Number(get(etParts, "minute"));
   const mins = h * 60 + m;
   const isWeekend = wd === "Sat" || wd === "Sun";
-  if (isWeekend) return { key: "CLOSED", label: "휴장(주말)" };
-  if (mins >= 4 * 60 && mins < 9 * 60 + 30) return { key: "PRE", label: "프리장" };
-  if (mins >= 9 * 60 + 30 && mins < 16 * 60) return { key: "REGULAR", label: "정규장" };
-  if (mins >= 16 * 60 && mins < 20 * 60) return { key: "POST", label: "애프터장" };
-  if (mins >= 20 * 60 || mins < 4 * 60) return { key: "POSTPOST", label: "데이마켓" };
-  return { key: "CLOSED", label: "장마감" };
+
+  // KST hour-of-day "right now", used to compute each session boundary's KST clock time
+  // by shifting from the current ET minute-of-day by the live ET->KST offset.
+  const kstParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false }).formatToParts(d);
+  const kstMins = Number(get(kstParts, "hour")) * 60 + Number(get(kstParts, "minute"));
+  let offset = kstMins - mins; // minutes to add to an ET time-of-day to get KST time-of-day
+  if (offset < 0) offset += 24 * 60; // normalize into [0, 1440)
+  const kst = (etMin) => { const t = ((etMin + offset) % (24 * 60) + 24 * 60) % (24 * 60); const hh = Math.floor(t / 60), mm = t % 60; return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`; };
+  const range = (a, b) => `한국시간 ${kst(a)}~${kst(b)}`;
+
+  if (isWeekend) return { key: "CLOSED", label: "휴장(주말)", kst: "" };
+  if (mins >= 4 * 60 && mins < 9 * 60 + 30) return { key: "PRE", label: "프리장", kst: range(4 * 60, 9 * 60 + 30) };
+  if (mins >= 9 * 60 + 30 && mins < 16 * 60) return { key: "REGULAR", label: "정규장", kst: range(9 * 60 + 30, 16 * 60) };
+  if (mins >= 16 * 60 && mins < 20 * 60) return { key: "POST", label: "애프터장", kst: range(16 * 60, 20 * 60) };
+  if (mins >= 20 * 60 || mins < 4 * 60) return { key: "POSTPOST", label: "데이마켓", kst: range(20 * 60, 28 * 60) };
+  return { key: "CLOSED", label: "장마감", kst: "" };
 }
 
 export default function App() {
@@ -1004,9 +1022,10 @@ export default function App() {
           USD/KRW <b className="num" style={{ color: th.text }}>{fmt(rate, 1)}</b><span style={{ color: th.textFaint }}>{fxLive ? "실시간" : "추정"}</span>
         </span>
         <span style={{ color: th.textFaint }}>·</span>
-        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }} title={marketSession.kst || ""}>
           <span style={{ width: 6, height: 6, borderRadius: "50%", background: marketSession.key === "REGULAR" ? th.heatPos : marketSession.key === "CLOSED" ? th.textFaint : "#f59e0b", flexShrink: 0 }} />
           미국장 <b style={{ color: th.text }}>{marketSession.label}</b>
+          {marketSession.kst && <span style={{ color: th.textFaint }}>({marketSession.kst})</span>}
         </span>
         <span style={{ color: th.textFaint }}>·</span>
         <span>업데이트 {lastUpdate ? lastUpdate.toLocaleTimeString() : "—"} <span style={{ color: th.textFaint }}>(60초마다 자동)</span></span>
@@ -2314,7 +2333,7 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur
         <Cell label="평가 손익" color={pnl == null ? th.text : pnl >= 0 ? th.heatPos : th.heatNeg}>{pnl == null ? "—" : (pnl >= 0 ? "+" : "") + m(pnl)}</Cell>
         <Cell label="전체 수익률" color={ret == null ? th.text : ret >= 0 ? th.heatPos : th.heatNeg}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}%`}</Cell>
         <Cell label="보유 종목">{count}개</Cell>
-        {divAnnual > 0 && <Cell label="연간 배당 수익" color={th.heatPos}>{m(divAnnual)}</Cell>}
+        <Cell label="연간 배당 수익" color={divAnnual > 0 ? th.heatPos : th.textFaint}>{divAnnual > 0 ? m(divAnnual) : "—"}</Cell>
         <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", padding: "12px 14px" }}>
           <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ background: th.panelAlt, border: `1px solid ${th.border}`, color: th.textDim, fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>
             {hideAmt ? "👁 금액 보이기" : "🙈 금액 가리기"}
