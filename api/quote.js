@@ -2,13 +2,28 @@
 // Yahoo Finance price incl. pre-market / after-hours / overnight (server-side, no CORS).
 // Usage: /api/quote?symbols=AAPL,005930.KS
 
+// Don't trust Yahoo's `marketState` field — it can be stale/wrong on the chart endpoint.
+// Instead compute the session ourselves from the real US Eastern wall-clock time.
+function usSessionFromET() {
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(now);
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  const wd = get("weekday"); const mins = Number(get("hour")) * 60 + Number(get("minute"));
+  if (wd === "Sat" || wd === "Sun") return "CLOSED";
+  if (mins >= 4 * 60 && mins < 9 * 60 + 30) return "PRE";
+  if (mins >= 9 * 60 + 30 && mins < 16 * 60) return "REGULAR";
+  if (mins >= 16 * 60 && mins < 20 * 60) return "POST";
+  if (mins >= 20 * 60 || mins < 4 * 60) return "POSTPOST";
+  return "CLOSED";
+}
+
 function parseQuote(j) {
   const result = j?.chart?.result?.[0];
   const meta = result?.meta;
   if (meta?.regularMarketPrice == null) return null;
   const regular = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
-  const state = meta.marketState || "REGULAR"; // PRE | REGULAR | POST | POSTPOST | CLOSED
+  const state = usSessionFromET(); // PRE | REGULAR | POST | POSTPOST | CLOSED — computed locally, not from Yahoo
 
   // We do NOT rely on meta.postMarketPrice/preMarketPrice — the /v8/finance/chart
   // endpoint's meta object doesn't reliably carry those fields (that's the /v7/quote

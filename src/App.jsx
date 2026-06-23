@@ -299,21 +299,21 @@ async function fetchCrypto(symbols) {
   } catch { return {}; }
 }
 /* Parse a Yahoo /v8/finance/chart response into {price, chg, cur, mkt}.
-   IMPORTANT: we do NOT rely on meta.postMarketPrice / meta.preMarketPrice — the chart
-   endpoint's `meta` object does not reliably expose those fields (they belong to the
-   separate /v7/finance/quote schema), so checking them silently fails and falls back
-   to the stale regular-session price. Instead we always take the LATEST non-null close
-   from the minute-bar series (which, with includePrePost=true, already reflects
-   whatever session is currently live — pre/regular/post/overnight). Only the *baseline*
-   we compare against changes with the session, so "오늘 등락률" means the right thing
-   in each session. */
+   We do NOT trust meta.marketState — confirmed unreliable (e.g. it can report "REGULAR"
+   well outside actual US trading hours). Instead we compute the live session ourselves
+   from real US Eastern wall-clock time via usMarketSession(), same as the header badge.
+   We also don't rely on meta.postMarketPrice/preMarketPrice — the chart endpoint's
+   `meta` object does not reliably expose those fields (they belong to the separate
+   /v7/finance/quote schema). Instead we always take the LATEST non-null close from the
+   minute-bar series (which, with includePrePost=true, already reflects whatever session
+   is currently live). Only the *baseline* we compare against changes with the session. */
 function parseYahooChartQuote(j) {
   const result = j?.chart?.result?.[0];
   const meta = result?.meta;
   if (meta?.regularMarketPrice == null) return null;
   const regular = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
-  const state = meta.marketState || "REGULAR"; // PRE | REGULAR | POST | POSTPOST | CLOSED
+  const state = usMarketSession().key; // PRE | REGULAR | POST | POSTPOST | CLOSED — our own clock, not Yahoo's
 
   const closes = result?.indicators?.quote?.[0]?.close || [];
   let latest = null;
