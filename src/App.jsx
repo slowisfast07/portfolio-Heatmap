@@ -1175,7 +1175,7 @@ export default function App() {
       <TopNav th={th} onHelp={() => { setShowWelcome(true); setWelcomeDismissed(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
 
       {/* BODY */}
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: 18, display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ maxWidth: "100%", margin: "0 auto", padding: "18px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
         {previewMode && (
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 12, border: `1px solid ${th.accent}`, background: th.panelAlt }}>
             <span style={{ fontSize: 18 }}>👀</span>
@@ -2002,7 +2002,7 @@ function TopNav({ th, onHelp }) {
   const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
     <div style={{ position: "sticky", top: 63, zIndex: 15, background: th.bg, borderBottom: `1px solid ${th.border}` }}>
-      <div style={{ maxWidth: 1280, margin: "0 auto", padding: "0 12px", display: "flex", gap: 2, overflowX: "auto", alignItems: "center" }}>
+      <div style={{ maxWidth: "100%", margin: "0 auto", padding: "0 24px", display: "flex", gap: 2, overflowX: "auto", alignItems: "center" }}>
         {NAV.map(([id, label]) => (
           <button key={id} className="navbtn" onClick={() => go(id)} style={{ flexShrink: 0, background: "transparent", border: "none", color: th.textDim, fontWeight: 700, fontSize: 13, padding: "11px 13px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{label}</button>
         ))}
