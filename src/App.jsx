@@ -1265,6 +1265,11 @@ export default function App() {
           <WhalePortfolios th={th} onSelect={(w) => { setSelectedWhale(w); track("view_whale", { name: w.name }); }} selected={selectedWhale} />
           {selectedWhale && <WhaleDetail th={th} whale={selectedWhale} onClose={() => setSelectedWhale(null)} onAdd={addAndFill} />}
         </div>
+
+        {/* feedback card — Polymarket-style */}
+        <div className="sec" style={{ display: "flex", justifyContent: "center", padding: "8px 0 48px" }}>
+          <FeedbackCard onOpen={() => { setFeedbackOpen(true); track("feedback_open", { from: "card" }); }} />
+        </div>
       </div>
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
       <button className="ph-btn ph-primary" onClick={() => { setFeedbackOpen(true); track("feedback_open"); }} title="의견·건의 보내기"
@@ -2282,6 +2287,100 @@ function WelcomeBanner({ th, onSample, onAdd, onClose }) {
         <button className="ph-btn ph-primary" onClick={onSample} style={primaryBtn(th)}>✨ 예시로 둘러보기</button>
         <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={secondaryBtn(th)}><Plus size={15} /> 내 종목 추가</button>
       </div>
+    </div>
+  );
+}
+
+/* Polymarket-style feedback call-to-action card shown at the bottom of the page. */
+function FeedbackCard({ onOpen }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: "100%",
+        maxWidth: 480,
+        boxSizing: "border-box",
+        padding: "44px 32px 32px",
+        borderRadius: 24,
+        border: "1px solid rgba(255,255,255,.08)",
+        background:
+          "radial-gradient(120% 90% at 50% 0%, rgba(139,92,246,.22) 0%, rgba(139,92,246,.06) 38%, rgba(13,15,20,0) 70%), linear-gradient(180deg, #14161c 0%, #0d0f14 100%)",
+        boxShadow: "0 24px 60px rgba(0,0,0,.45)",
+        textAlign: "center",
+        overflow: "hidden",
+      }}
+    >
+      {/* beta badge */}
+      <span
+        style={{
+          position: "absolute",
+          top: 18,
+          right: 18,
+          fontSize: 13,
+          fontWeight: 600,
+          color: "#c4b5fd",
+          background: "rgba(139,92,246,.18)",
+          border: "1px solid rgba(139,92,246,.35)",
+          padding: "5px 14px",
+          borderRadius: 999,
+        }}
+      >
+        베타
+      </span>
+
+      {/* gradient logo icon */}
+      <div
+        style={{
+          width: 72,
+          height: 72,
+          margin: "0 auto 22px",
+          borderRadius: 18,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          background: "linear-gradient(135deg, #34d399 0%, #8b5cf6 55%, #a855f7 100%)",
+          boxShadow: "0 10px 30px rgba(139,92,246,.5)",
+        }}
+      >
+        <svg width="38" height="38" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
+            stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+
+      {/* title */}
+      <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 12 }}>
+        의견 보내기
+      </div>
+
+      {/* subtitle */}
+      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#9aa3af", maxWidth: 340, margin: "0 auto 28px" }}>
+        쓰면서 불편한 점이나 더 있으면 좋겠는 기능을 알려주시면 빠르게 반영할게요
+      </div>
+
+      {/* pill button */}
+      <button
+        onClick={onOpen}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          width: "100%",
+          padding: "16px 24px",
+          borderRadius: 999,
+          border: "none",
+          cursor: "pointer",
+          fontSize: 17,
+          fontWeight: 700,
+          color: "#fff",
+          background: "linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%)",
+          boxShadow: hover ? "0 12px 32px rgba(139,92,246,.55)" : "0 8px 22px rgba(139,92,246,.4)",
+          transform: hover ? "translateY(-1px)" : "none",
+          transition: "all .18s ease",
+        }}
+      >
+        시작하기
+      </button>
     </div>
   );
 }
