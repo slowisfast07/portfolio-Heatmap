@@ -1038,7 +1038,7 @@ export default function App() {
           <WelcomeBanner th={th} onSample={loadSample} onAdd={addHolding} onClose={() => { setWelcomeDismissed(true); setShowWelcome(false); }} />
         )}
         {/* Summary band */}
-        <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} count={activeHoldings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} />
+        <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} count={activeHoldings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} divAnnual={dividendData.totalAnnual} />
         {/* Heatmap — full width */}
         <div id="sec-heatmap" className="sec">
         <Panel th={th} title="Heatmap" glow
@@ -2298,7 +2298,7 @@ function DividendCard({ th, dv, displayCur, hideAmt }) {
 /* ------------------------------------------------------------------ *
  *  SUMMARY BAND (big top stats, Finviz-style overview)                *
  * ------------------------------------------------------------------ */
-function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur, hideAmt, onToggleHide }) {
+function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur, hideAmt, onToggleHide, divAnnual }) {
   const m = (v) => (hideAmt ? "••••" : fmtMoney(v, displayCur));
   const Cell = ({ label, children, color }) => (
     <div style={{ flex: "1 1 150px", minWidth: 130, padding: "12px 16px", borderRight: `1px solid ${th.border}` }}>
@@ -2314,6 +2314,7 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur
         <Cell label="평가 손익" color={pnl == null ? th.text : pnl >= 0 ? th.heatPos : th.heatNeg}>{pnl == null ? "—" : (pnl >= 0 ? "+" : "") + m(pnl)}</Cell>
         <Cell label="전체 수익률" color={ret == null ? th.text : ret >= 0 ? th.heatPos : th.heatNeg}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}%`}</Cell>
         <Cell label="보유 종목">{count}개</Cell>
+        {divAnnual > 0 && <Cell label="연간 배당 수익" color={th.heatPos}>{m(divAnnual)}</Cell>}
         <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", padding: "12px 14px" }}>
           <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ background: th.panelAlt, border: `1px solid ${th.border}`, color: th.textDim, fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>
             {hideAmt ? "👁 금액 보이기" : "🙈 금액 가리기"}
