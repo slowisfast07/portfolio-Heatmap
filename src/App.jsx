@@ -47,12 +47,16 @@ const SAMPLE_HOLDINGS = [
   { type: "us", ticker: "TSLA", name: "Tesla", sector: "전기차", qty: 10, avgCost: 245, price: 322, chg: -1.2, cur: "USD", buyDate: "2024-06-14", rsi: 48, bbPos: 41 },
   { type: "us", ticker: "LLY", name: "Eli Lilly", sector: "바이오/헬스케어", qty: 3, avgCost: 720, price: 880, chg: 0.7, cur: "USD", buyDate: "2024-02-28", rsi: 54, bbPos: 56 },
   { type: "us", ticker: "IONQ", name: "IonQ", sector: "양자컴퓨팅", qty: 80, avgCost: 22, price: 37, chg: -3.1, cur: "USD", buyDate: "2025-01-20", rsi: 44, bbPos: 28 },
-  { type: "etf", ticker: "SCHD", name: "Schwab US Dividend ETF", sector: "배당주 ETF", qty: 40, avgCost: 26, price: 28.5, chg: 0.3, cur: "USD", buyDate: "2024-10-02", rsi: 53, bbPos: 55 },
+  { type: "etf", ticker: "SCHD", name: "Schwab US Dividend ETF", sector: "배당주 ETF", qty: 40, avgCost: 26, price: 28.5, chg: 0.3, cur: "USD", buyDate: "2024-10-02", rsi: 53, bbPos: 55, divYield: 3.5 },
   { type: "kr", ticker: "005930.KS", name: "삼성전자", sector: "메모리/반도체", qty: 80, avgCost: 64000, price: 78000, chg: 1.2, cur: "KRW", buyDate: "2024-03-05", rsi: 60, bbPos: 70 },
   { type: "kr", ticker: "000660.KS", name: "SK하이닉스", sector: "메모리/반도체", qty: 12, avgCost: 150000, price: 235000, chg: 2.9, cur: "KRW", buyDate: "2024-05-11", rsi: 66, bbPos: 84 },
   { type: "kr", ticker: "373220.KS", name: "LG에너지솔루션", sector: "2차전지", qty: 8, avgCost: 410000, price: 352000, chg: -0.9, cur: "KRW", buyDate: "2024-04-18", rsi: 41, bbPos: 24 },
   { type: "crypto", ticker: "BTC", name: "Bitcoin", sector: "크립토", qty: 0.15, avgCost: 56000, price: 98000, chg: 1.5, cur: "USD", buyDate: "2024-01-25", rsi: 63, bbPos: 76 },
   { type: "crypto", ticker: "ETH", name: "Ethereum", sector: "크립토", qty: 2, avgCost: 2900, price: 3450, chg: -1.0, cur: "USD", buyDate: "2024-06-30", rsi: 47, bbPos: 38 },
+  { type: "commodity", ticker: "GLD", name: "SPDR Gold Shares", sector: "현물자산", qty: 25, avgCost: 195, price: 268, chg: 0.6, cur: "USD", buyDate: "2024-02-01", rsi: 59, bbPos: 64, divYield: 0 },
+  { type: "commodity", ticker: "SLV", name: "iShares Silver Trust", sector: "현물자산", qty: 60, avgCost: 22, price: 31, chg: 1.1, cur: "USD", buyDate: "2024-07-10", rsi: 61, bbPos: 68, divYield: 0 },
+  { type: "reit", ticker: "O", name: "Realty Income", sector: "부동산", qty: 60, avgCost: 54, price: 58, chg: -0.3, cur: "USD", buyDate: "2024-03-15", rsi: 49, bbPos: 44, divYield: 5.6 },
+  { type: "kr", ticker: "055550.KS", name: "신한지주", sector: "배당주", qty: 70, avgCost: 46000, price: 58000, chg: 0.5, cur: "KRW", buyDate: "2024-02-20", rsi: 56, bbPos: 60, divYield: 5.1 },
 ];
 
 /* feedback / waitlist — POSTs to /api/feedback (forwards to your webhook).
@@ -123,6 +127,8 @@ const THEME_CATALOG = {
   "배당주": ["SCHD", "JEPI", "KO", "O"],
   "크립토": ["BTC", "ETH", "SOL"],
   "금융": ["JPM", "BAC", "V", "105560.KS"],
+  "현물자산": ["GLD", "SLV", "GC=F"],
+  "부동산": ["O", "VNQ", "330590.KS"],
 };
 function buildIdeas(sectorData, heldSet) {
   const wByTheme = {}; sectorData.forEach((d) => { wByTheme[d.sector] = d.pct; });
@@ -154,7 +160,29 @@ const SECTOR_PRESETS = [
   "Technology", "Communication", "Consumer Cyclical", "Consumer Defensive", "Financial",
   "Healthcare", "Industrials", "Energy", "Real Estate", "Basic Materials", "Utilities", "Crypto", "Other",
   "AI 반도체", "메모리/반도체", "반도체 파운드리", "AI 데이터센터", "네오클라우드", "양자컴퓨팅", "성장주", "배당주",
+  "현물자산", "부동산",
 ];
+
+/* commodity tickers we recognize directly (Yahoo futures/spot symbols) -> display info.
+   Typing GLD/SLV (ETF) also works fine through the normal "us"/"etf" stock path;
+   these are for people who want spot gold/silver specifically. */
+const COMMODITY_MAP = {
+  "GC=F": { name: "금 (Gold Futures)", sector: "현물자산" },
+  "SI=F": { name: "은 (Silver Futures)", sector: "현물자산" },
+  "GOLD": { name: "금", sector: "현물자산" },
+  "SILVER": { name: "은", sector: "현물자산" },
+  "GLD": { name: "SPDR Gold Shares", sector: "현물자산" },
+  "SLV": { name: "iShares Silver Trust", sector: "현물자산" },
+  "IAU": { name: "iShares Gold Trust", sector: "현물자산" },
+};
+/* common aliases users might type for gold/silver -> a tradeable Yahoo symbol (ETF proxy, reliable quotes) */
+const COMMODITY_ALIASES = { "금": "GC=F", "GOLD": "GC=F", "은": "SI=F", "SILVER": "SI=F" };
+
+/* REIT tickers we recognize for auto sector tagging (한국/미국 대표 리츠) */
+const REIT_TICKERS = new Set([
+  "O", "VNQ", "SPG", "PLD", "AMT", "EQIX", "DLR", // 미국
+  "330590.KS", "088980.KS", "365550.KS", "293940.KS", "395400.KS", // 한국 (롯데/맥쿼리/제이알/신한알파/SK리츠 등)
+]);
 
 /* curated starter theme tags for well-known tickers — fully editable in the table */
 const THEME_MAP = {
@@ -218,6 +246,29 @@ const fmtMoney = (n, cur) => {
 const returnPct = (h) =>
   h.avgCost && h.price != null && h.avgCost > 0 ? ((h.price - h.avgCost) / h.avgCost) * 100 : null;
 
+/* when the user switches the type dropdown, force the right currency/sector for
+   types that should always belong to a fixed category (commodity, reit, crypto).
+   reit/commodity keep whatever currency the holding already had — the actual
+   ticker (e.g. a Korean REIT vs O/VNQ) determines KRW vs USD, not the type itself. */
+function typeChangePatch(t, currentSector, currentCur) {
+  const patch = { type: t, cur: t === "kr" ? "KRW" : t === "us" || t === "etf" || t === "crypto" ? "USD" : currentCur };
+  if (t === "crypto") patch.sector = "Crypto";
+  else if (t === "commodity") patch.sector = "현물자산";
+  else if (t === "reit") patch.sector = "부동산";
+  else patch.sector = currentSector;
+  return patch;
+}
+const TYPE_OPTIONS = (
+  <>
+    <option value="us">미국</option>
+    <option value="kr">한국</option>
+    <option value="etf">ETF</option>
+    <option value="crypto">크립토</option>
+    <option value="commodity">현물자산(금·은)</option>
+    <option value="reit">리츠/부동산</option>
+  </>
+);
+
 function heatColor(pct, th, cap) {
   if (pct == null || isNaN(pct)) return th.heatNeu;
   const t = Math.max(-1, Math.min(1, pct / cap));
@@ -263,14 +314,30 @@ async function fetchStocks(symbols) {
       const meta = result?.meta;
       if (meta?.regularMarketPrice != null) {
         const regular = meta.regularMarketPrice;
-        const prev = meta.chartPreviousClose ?? meta.previousClose ?? regular;
-        const closes = result?.indicators?.quote?.[0]?.close || [];
-        let latest = null;
-        for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
-        const price = latest != null ? latest : regular;
-        const state = meta.marketState || "";
-        const mkt = state.startsWith("PRE") ? "프리장" : state.startsWith("POST") ? "애프터장" : state === "REGULAR" ? "정규장" : "장마감";
-        out[sym] = { price, chg: prev ? ((price - prev) / prev) * 100 : null, cur: meta.currency || null, mkt };
+        const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
+        const state = meta.marketState || "REGULAR"; // PRE | REGULAR | POST | POSTPOST | CLOSED
+
+        /* pick the price + baseline that actually matches the live session, instead of
+           always defaulting to the regular-session close. Yahoo gives separate
+           pre/post-market fields that reflect extended-hours trading. */
+        let price, base, mkt;
+        if (state === "PRE" && meta.preMarketPrice != null) {
+          price = meta.preMarketPrice; base = prevClose; mkt = "프리장";
+        } else if (state === "POST" && meta.postMarketPrice != null) {
+          // POST = the few hours right after the 4pm close (after-hours)
+          price = meta.postMarketPrice; base = regular; mkt = "애프터장";
+        } else if (state === "POSTPOST" && meta.postMarketPrice != null) {
+          // POSTPOST = late-night extended/overnight session ("데이마켓") that runs after-hours has ended
+          price = meta.postMarketPrice; base = regular; mkt = "데이마켓";
+        } else {
+          // REGULAR or CLOSED with no extended quote available — use the latest minute close if newer than the cached regular price
+          const closes = result?.indicators?.quote?.[0]?.close || [];
+          let latest = null;
+          for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
+          price = latest != null ? latest : regular; base = prevClose;
+          mkt = state === "REGULAR" ? "정규장" : "장마감";
+        }
+        out[sym] = { price, chg: base ? ((price - base) / base) * 100 : null, cur: meta.currency || null, mkt };
       }
     } catch { /* skip */ }
   }));
@@ -494,6 +561,23 @@ async function persist(d) {
 /* ================================================================== *
  *  MAIN                                                                *
  * ================================================================== */
+/* Determine current US market session from US Eastern wall-clock time, independent of any
+   single ticker's fetch result — so the header can always show "지금이 무슨 시간대인지"
+   even before any quote has loaded. Matches Yahoo's PRE / REGULAR / POST / POSTPOST naming. */
+function usMarketSession(d = new Date()) {
+  const parts = new Intl.DateTimeFormat("en-US", { timeZone: "America/New_York", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(d);
+  const get = (t) => parts.find((p) => p.type === t)?.value;
+  const wd = get("weekday"); const h = Number(get("hour")); const m = Number(get("minute"));
+  const mins = h * 60 + m;
+  const isWeekend = wd === "Sat" || wd === "Sun";
+  if (isWeekend) return { key: "CLOSED", label: "휴장(주말)" };
+  if (mins >= 4 * 60 && mins < 9 * 60 + 30) return { key: "PRE", label: "프리장" };
+  if (mins >= 9 * 60 + 30 && mins < 16 * 60) return { key: "REGULAR", label: "정규장" };
+  if (mins >= 16 * 60 && mins < 20 * 60) return { key: "POST", label: "애프터장" };
+  if (mins >= 20 * 60 || mins < 4 * 60) return { key: "POSTPOST", label: "데이마켓" };
+  return { key: "CLOSED", label: "장마감" };
+}
+
 export default function App() {
   const [themeName, setThemeName] = useState("dark");
   const th = THEMES[themeName];
@@ -504,6 +588,11 @@ export default function App() {
   const [fxLive, setFxLive] = useState(false);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
+  const [marketSession, setMarketSession] = useState(() => usMarketSession());
+  useEffect(() => {
+    const t = setInterval(() => setMarketSession(usMarketSession()), 30000);
+    return () => clearInterval(t);
+  }, []);
   const [savedAt, setSavedAt] = useState(null);
   const [hydrated, setHydrated] = useState(false);
 
@@ -668,16 +757,16 @@ export default function App() {
 
   const addHolding = () => { setHoldings((p) => [...p, { id: uid(), type: "us", ticker: "", name: "", sector: "Technology", qty: 0, avgCost: null, buyDate: null, price: null, cur: "USD", chg: null, live: false }]); track("add_holding"); };
   const loadSample = useCallback(() => {
-    setPreBackup((prev) => prev || { holdings, cash }); // remember the user's real data (once)
+    setPreBackup((prev) => prev || { holdings, cash, advanced }); // remember the user's real data (once)
     setHoldings(SAMPLE_HOLDINGS.map((h) => ({ id: uid(), live: true, ...h }))); // prices pre-filled → full dashboard instantly
     setCash([{ id: uid(), label: "달러 예수금", cur: "USD", amount: 4000 }, { id: uid(), label: "원화 예수금", cur: "KRW", amount: 6000000 }]);
-    setPreviewMode(true);
+    setPreviewMode(true); setAdvanced(true); // show buyDate/배당률/RSI/BB% columns so the demo showcases everything
     setShowWelcome(false); setWelcomeDismissed(true);
     track("load_sample");
-  }, [holdings, cash]);
+  }, [holdings, cash, advanced]);
 
   const exitPreview = useCallback(() => {
-    if (preBackup) { setHoldings(preBackup.holdings); setCash(preBackup.cash); }
+    if (preBackup) { setHoldings(preBackup.holdings); setCash(preBackup.cash); setAdvanced(!!preBackup.advanced); }
     setPreBackup(null); setPreviewMode(false);
     track("exit_preview");
   }, [preBackup]);
@@ -698,6 +787,30 @@ export default function App() {
       const cd = await fetchCrypto([sym]);
       if (cd[sym]) updateHolding(id, { price: cd[sym].price, chg: cd[sym].chg, cur: "USD", live: true });
       track("ticker_resolved", { ticker: sym, type: "crypto" });
+      return;
+    }
+    /* commodity: translate friendly aliases ("금"/"GOLD"/"은"/"SILVER") to a tradeable Yahoo symbol */
+    if (type === "commodity") {
+      const raw_u = raw.toUpperCase();
+      const sym = COMMODITY_ALIASES[raw] || COMMODITY_ALIASES[raw_u] || raw_u;
+      const known = COMMODITY_MAP[sym];
+      updateHolding(id, { ticker: sym, name: known?.name || sym, sector: "현물자산" });
+      const sd = await fetchStocks([sym]);
+      if (sd[sym]) updateHolding(id, { price: sd[sym].price, chg: sd[sym].chg, mkt: sd[sym].mkt, ...(sd[sym].cur ? { cur: sd[sym].cur } : {}), live: true, sector: "현물자산" });
+      track("ticker_resolved", { ticker: sym, type: "commodity" });
+      return;
+    }
+    if (type === "reit") {
+      const sym = raw.toUpperCase();
+      const info = await lookupTicker(raw);
+      const patch = { sector: "부동산" };
+      if (info?.symbol) { patch.ticker = info.symbol.toUpperCase(); }
+      if (info?.name) patch.name = info.name;
+      updateHolding(id, patch);
+      const finalSym = patch.ticker || sym;
+      const sd = await fetchStocks([finalSym]);
+      if (sd[finalSym]) updateHolding(id, { price: sd[finalSym].price, chg: sd[finalSym].chg, mkt: sd[finalSym].mkt, ...(sd[finalSym].cur ? { cur: sd[finalSym].cur } : {}), live: true, sector: "부동산" });
+      track("ticker_resolved", { ticker: finalSym, type: "reit" });
       return;
     }
     const info = await lookupTicker(raw);
@@ -765,6 +878,20 @@ export default function App() {
     return { priceP, fxP, total: priceP + fxP, n, skipped, hasFxHist: !!fxHist };
   }, [activeHoldings, histMap, rate, displayCur]);
 
+  /* dividend income estimate — based on user-entered annual yield (%) per holding.
+     annualIncome(displayCur) = Σ valueOf(h) * divYield/100, converted to displayCur. */
+  const dividendData = useMemo(() => {
+    const rows = activeHoldings.filter((h) => h.ticker && h.divYield != null && h.divYield > 0).map((h) => {
+      const val = valueOf(h);
+      const annual = val * (h.divYield / 100);
+      return { id: h.id, ticker: h.ticker, name: h.name, divYield: h.divYield, value: val, annual, monthly: annual / 12 };
+    }).sort((a, b) => b.annual - a.annual);
+    const totalAnnual = rows.reduce((s, r) => s + r.annual, 0);
+    const totalValue = rows.reduce((s, r) => s + r.value, 0);
+    const avgYield = totalValue ? (totalAnnual / totalValue) * 100 : 0;
+    return { rows, totalAnnual, totalMonthly: totalAnnual / 12, avgYield, n: rows.length };
+  }, [activeHoldings, valueOf]);
+
   /* backup / restore (#14) */
   const exportData = useCallback(() => {
     const payload = { version: 2, exportedAt: new Date().toISOString(), holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } };
@@ -800,7 +927,7 @@ export default function App() {
   const addAndFill = useCallback((ticker) => {
     const t = (ticker || "").toUpperCase();
     if (!t || heldSet.has(t)) return;
-    const type = /\.(KS|KQ)$/i.test(t) ? "kr" : (CRYPTO_IDS[t] ? "crypto" : "us");
+    const type = COMMODITY_MAP[t] ? "commodity" : REIT_TICKERS.has(t) ? "reit" : /\.(KS|KQ)$/i.test(t) ? "kr" : (CRYPTO_IDS[t] ? "crypto" : "us");
     const id = uid();
     setHoldings((p) => [...p, { id, type, ticker: t, name: "", sector: "", qty: 0, avgCost: null, buyDate: null, price: null, cur: type === "kr" ? "KRW" : "USD", chg: null, live: false }]);
     setTimeout(() => autoFill(id, t, type), 50);
@@ -877,6 +1004,11 @@ export default function App() {
           USD/KRW <b className="num" style={{ color: th.text }}>{fmt(rate, 1)}</b><span style={{ color: th.textFaint }}>{fxLive ? "실시간" : "추정"}</span>
         </span>
         <span style={{ color: th.textFaint }}>·</span>
+        <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: marketSession.key === "REGULAR" ? th.heatPos : marketSession.key === "CLOSED" ? th.textFaint : "#f59e0b", flexShrink: 0 }} />
+          미국장 <b style={{ color: th.text }}>{marketSession.label}</b>
+        </span>
+        <span style={{ color: th.textFaint }}>·</span>
         <span>업데이트 {lastUpdate ? lastUpdate.toLocaleTimeString() : "—"} <span style={{ color: th.textFaint }}>(60초마다 자동)</span></span>
         {savedAt && !previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.heatPos }}>✓ 자동 저장됨</span></>}
         {previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.textFaint }}>미리보기(저장 안 됨)</span></>}
@@ -943,8 +1075,8 @@ export default function App() {
               {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
               <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} advanced={advanced} hideAmt={hideAmt} onToggleAll={toggleAllIncluded} allIncluded={allIncluded} />
               <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
-                티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다.
-                <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다. <b style={{ color: th.textDim }}>심화</b>를 켜면 매수일·RSI·BB%가 보이고, 다 넣은 뒤엔 <b style={{ color: th.textDim }}>▴ 접기</b>로 정리하세요.
+                티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다. 금·은은 <b style={{ color: th.textDim }}>현물자산</b>, 리츠는 <b style={{ color: th.textDim }}>리츠/부동산</b> 유형을 선택하세요.
+                <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다. <b style={{ color: th.textDim }}>심화</b>를 켜면 매수일·배당률·RSI·BB%가 보이고, 다 넣은 뒤엔 <b style={{ color: th.textDim }}>▴ 접기</b>로 정리하세요.
                 <br />맨 왼쪽 <b style={{ color: th.textDim }}>체크박스</b>를 끄면 그 종목은 집계·히트맵에서 빠져요 — 계좌별로 골라 볼 때 쓰세요 (헤더 체크박스로 전체 선택/해제).
               </p>
             </>
@@ -958,6 +1090,7 @@ export default function App() {
             <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
               investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
             <FxCard th={th} fx={fxPnl} displayCur={displayCur} />
+            <DividendCard th={th} dv={dividendData} displayCur={displayCur} hideAmt={hideAmt} />
           </div>
           <AllocationDonut th={th} sectorData={sectorData} sectorColorMap={colorMap} holdingValue={holdingAllocValue} holdingCost={holdingAllocCost} holdingColorMap={holdingColorMap} />
         </div>
@@ -1175,7 +1308,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
         <thead><tr>
           <th style={head("center")} title="체크된 종목만 집계·히트맵에 반영 (계좌별 보기)"><input type="checkbox" checked={allIncluded} onChange={onToggleAll} style={{ accentColor: th.accent, cursor: "pointer", width: 15, height: 15 }} /></th>
           <th style={head()}>유형</th><th style={head()}>티커</th><th style={head()}>이름</th><th style={head()}>섹터</th>
-          <th style={head("right")}>수량</th><th style={head("right")}>평단가</th>{advanced && <th style={head("center")} title="매수일을 넣으면 벤치마크 추이에 실제 보유 시점이 반영됩니다">매수일</th>}<th style={head("right")}>현재 주가</th>
+          <th style={head("right")}>수량</th><th style={head("right")}>평단가</th>{advanced && <th style={head("center")} title="매수일을 넣으면 벤치마크 추이에 실제 보유 시점이 반영됩니다">매수일</th>}{advanced && <th style={head("right")} title="연간 배당률(%) — 직접 입력하면 배당 수익 카드에 반영됩니다">배당률%</th>}<th style={head("right")}>현재 주가</th>
           <th style={head("right")}>일간%</th>{advanced && <th style={head("right")} title="RSI(14)">RSI</th>}{advanced && <th style={head("right")} title="볼린저밴드 위치 (20일, 2σ) — %B">BB%</th>}<th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
         </tr></thead>
         <tbody>
@@ -1185,8 +1318,8 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
             return (
               <tr key={h.id} className="ph-row" style={{ opacity: off ? 0.42 : 1 }}>
                 <td style={{ ...cell, textAlign: "center" }}><input type="checkbox" checked={!off} onChange={(e) => onUpdate(h.id, { included: e.target.checked })} style={{ accentColor: th.accent, cursor: "pointer", width: 15, height: 15 }} title={off ? "집계에서 제외됨 — 체크하면 포함" : "집계·히트맵에 포함됨"} /></td>
-                <td style={cell}><select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 62)}><option value="us">미국</option><option value="kr">한국</option><option value="etf">ETF</option><option value="crypto">크립토</option></select></td>
-                <td style={cell}><TickerInput th={th} value={h.ticker} type={h.type} width={92} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : "AAPL"}
+                <td style={cell}><select value={h.type} onChange={(e) => onUpdate(h.id, typeChangePatch(e.target.value, h.sector, h.cur))} style={selStyle(th, 92)}>{TYPE_OPTIONS}</select></td>
+                <td style={cell}><TickerInput th={th} value={h.ticker} type={h.type} width={92} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : h.type === "commodity" ? "금 / GC=F" : h.type === "reit" ? "O / 맥쿼리인프라" : "AAPL"}
                   onText={(val) => onUpdate(h.id, { ticker: val, live: false })}
                   onPick={(sym) => { const s = (sym || h.ticker || "").toUpperCase(); if (s !== h.ticker) onUpdate(h.id, { ticker: s, live: false }); onAutoFill(h.id, s, h.type); }} /></td>
                 <td style={cell}><input value={h.name} placeholder="자동" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={inpStyle(th, 120)} /></td>
@@ -1194,13 +1327,14 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                 <td style={{ ...cell, textAlign: "right" }}><input type="number" value={h.qty || ""} placeholder="0" onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 66), textAlign: "right" }} className="num" /></td>
                 <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 76), textAlign: "right" }} className="num" /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>
                 {advanced && <td style={{ ...cell, textAlign: "center" }}><input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 124), colorScheme: th === THEMES.dark ? "dark" : "light" }} title="매수일(선택)" /></td>}
+                {advanced && <td style={{ ...cell, textAlign: "right" }}><input type="number" step="0.1" value={h.divYield ?? ""} placeholder="0" onChange={(e) => onUpdate(h.id, { divYield: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 56), textAlign: "right" }} className="num" title="연간 배당률(%) — 예: SCHD 3.5" /></td>}
                 <td style={{ ...cell, textAlign: "right" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
                     <input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 84), textAlign: "right", color: h.live ? th.accent : th.text }} className="num" title={h.live ? "야후 실시간" : "직접 입력 가능"} />
                     <span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span>
                   </div>
                   {h.live && h.mkt && h.mkt !== "정규장" && (
-                    <div style={{ fontSize: 9.5, marginTop: 2, textAlign: "right", color: h.mkt === "프리장" ? th.accent : h.mkt === "애프터장" ? "#f59e0b" : th.textFaint }}>{h.mkt}</div>
+                    <div style={{ fontSize: 9.5, marginTop: 2, textAlign: "right", color: h.mkt === "프리장" ? th.accent : h.mkt === "애프터장" ? "#f59e0b" : h.mkt === "데이마켓" ? "#a78bfa" : th.textFaint }}>{h.mkt}</div>
                   )}
                 </td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg, fontWeight: 600 }}>{h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}`}</td>
@@ -1213,7 +1347,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
               </tr>
             );
           })}
-          {!holdings.length && <tr><td colSpan={advanced ? 16 : 13} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
+          {!holdings.length && <tr><td colSpan={advanced ? 17 : 13} style={{ ...cell, textAlign: "center", color: th.textFaint, padding: 28 }}>"종목 추가"를 눌러 입력하세요</td></tr>}
         </tbody>
       </table>
     </div>
@@ -1948,11 +2082,11 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
               <input type="checkbox" checked={h.included !== false} onChange={(e) => onUpdate(h.id, { included: e.target.checked })} style={{ accentColor: th.accent, cursor: "pointer", width: 18, height: 18, flexShrink: 0 }} title="집계·히트맵 포함" />
               <div style={{ flex: 1 }}>
-                <TickerInput th={th} value={h.ticker} type={h.type} width={110} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : "AAPL"}
+                <TickerInput th={th} value={h.ticker} type={h.type} width={110} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : h.type === "commodity" ? "금 / GC=F" : h.type === "reit" ? "O / 맥쿼리인프라" : "AAPL"}
                   onText={(val) => onUpdate(h.id, { ticker: val, live: false })}
                   onPick={(sym) => { const s = (sym || h.ticker || "").toUpperCase(); if (s !== h.ticker) onUpdate(h.id, { ticker: s, live: false }); onAutoFill(h.id, s, h.type); }} />
               </div>
-              <select value={h.type} onChange={(e) => { const t = e.target.value; onUpdate(h.id, { type: t, cur: t === "kr" ? "KRW" : "USD", sector: t === "crypto" ? "Crypto" : h.sector }); }} style={selStyle(th, 70)}><option value="us">미국</option><option value="kr">한국</option><option value="etf">ETF</option><option value="crypto">크립토</option></select>
+              <select value={h.type} onChange={(e) => onUpdate(h.id, typeChangePatch(e.target.value, h.sector, h.cur))} style={selStyle(th, 96)}>{TYPE_OPTIONS}</select>
               <button className="ph-btn" onClick={() => onRemove(h.id)} style={{ ...iconBtn(th), width: 30, height: 30, color: th.heatNeg }}><Trash2 size={14} /></button>
             </div>
             <input value={h.name} placeholder="이름 (자동)" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={{ ...inpStyle(th, 0), width: "100%", marginBottom: 8 }} />
@@ -1962,6 +2096,7 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
               {fld(`평단가(${h.cur === "KRW" ? "₩" : "$"})`, <input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
               {fld(`현재가(${h.cur === "KRW" ? "₩" : "$"})`, <input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right", color: h.live ? th.accent : th.text }} className="num" />)}
               {advanced && fld("매수일", <input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 0), width: "100%" }} />)}
+              {advanced && fld("배당률(%)", <input type="number" step="0.1" value={h.divYield ?? ""} placeholder="0" onChange={(e) => onUpdate(h.id, { divYield: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
             </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 9, borderTop: `1px solid ${th.border}` }}>
               {metric("일간", h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}%`, h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg)}
@@ -2117,6 +2252,49 @@ function FxCard({ th, fx, displayCur }) {
   );
 }
 
+function DividendCard({ th, dv, displayCur, hideAmt }) {
+  const m = (v) => (hideAmt ? "••••" : fmtMoney(v, displayCur));
+  return (
+    <Panel th={th} title="배당 수익" sub="종목별 배당률(%)을 입력하면 예상 배당 수익을 계산해요">
+      {dv.n > 0 ? (
+        <>
+          <div style={{ display: "flex", gap: 18, marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 11, color: th.textFaint, marginBottom: 3 }}>연간 예상 배당</div>
+              <div className="num" style={{ fontSize: 19, fontWeight: 800, color: th.heatPos }}>{m(dv.totalAnnual)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: th.textFaint, marginBottom: 3 }}>월 평균</div>
+              <div className="num" style={{ fontSize: 19, fontWeight: 800, color: th.text }}>{m(dv.totalMonthly)}</div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: th.textFaint, marginBottom: 3 }}>평균 배당률</div>
+              <div className="num" style={{ fontSize: 19, fontWeight: 800, color: th.text }}>{fmt(dv.avgYield, 2)}%</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+            {dv.rows.map((r) => (
+              <div key={r.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: 12.5 }}>
+                <span style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                  <b style={{ color: th.text }}>{bareCode(r.ticker)}</b>
+                  <span style={{ color: th.textFaint, fontSize: 11 }}>{fmt(r.divYield, 2)}%</span>
+                </span>
+                <span className="num" style={{ color: th.heatPos, fontWeight: 700 }}>{m(r.annual)}<span style={{ color: th.textFaint, fontWeight: 500 }}> /년</span></span>
+              </div>
+            ))}
+          </div>
+          <p style={{ fontSize: 10.5, color: th.textFaint, marginTop: 10, lineHeight: 1.6 }}>
+            실제 지급 배당률·시점은 종목마다 달라요. 표(심화 모드)의 <b style={{ color: th.textDim }}>배당률%</b>를 직접 입력해 추정한 참고용 수치입니다.
+          </p>
+        </>
+      ) : (
+        <div style={{ height: 110, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 12.5, textAlign: "center", lineHeight: 1.7 }}>
+          포트폴리오 표에서 <b style={{ color: th.textDim }}>심화</b>를 켜고 종목의 <b style={{ color: th.textDim }}>배당률%</b>을 입력하면<br />예상 연간·월 배당 수익을 보여드려요.
+        </div>
+      )}
+    </Panel>
+  );
+}
 /* ------------------------------------------------------------------ *
  *  SUMMARY BAND (big top stats, Finviz-style overview)                *
  * ------------------------------------------------------------------ */
