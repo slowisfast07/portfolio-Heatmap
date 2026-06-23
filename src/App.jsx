@@ -334,17 +334,25 @@ async function fetchStocks(symbols) {
   if (!symbols.length) return {};
   try {
     const r = await fetch(`/api/quote?symbols=${encodeURIComponent(symbols.join(","))}`);
-    if (r.ok) { const j = await r.json(); if (j && !j.error) return j; }
+    if (r.ok) { const j = await r.json(); if (j && !j.error && Object.keys(j).length) return j; }
   } catch { /* fall through */ }
   const out = {};
   await Promise.all(symbols.map(async (sym) => {
-    try {
-      const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
-      const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(y)}`);
-      const j = await r.json();
-      const q = parseYahooChartQuote(j);
-      if (q) out[sym] = q;
-    } catch { /* skip */ }
+    const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
+    // try allorigins first, then corsproxy.io as a backup if that proxy service itself is down
+    const proxies = [
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(y)}`,
+      `https://corsproxy.io/?url=${encodeURIComponent(y)}`,
+    ];
+    for (const proxyUrl of proxies) {
+      try {
+        const r = await fetch(proxyUrl);
+        if (!r.ok) continue;
+        const j = await r.json();
+        const q = parseYahooChartQuote(j);
+        if (q) { out[sym] = q; break; }
+      } catch { /* try next proxy */ }
+    }
   }));
   return out;
 }

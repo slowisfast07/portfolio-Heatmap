@@ -33,19 +33,34 @@ function parseQuote(j) {
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Cache-Control", "s-maxage=15, stale-while-revalidate=20");
-  const raw = (req.query.symbols || "").toString();
-  const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 60);
-  if (!symbols.length) return res.status(400).json({ error: "no symbols" });
+  try {
+    const raw = (req.query.symbols || "").toString();
+    const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 60);
+    if (!symbols.length) return res.status(400).json({ error: "no symbols" });
 
-  const out = {};
-  await Promise.all(symbols.map(async (sym) => {
-    try {
-      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
-      const r = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-      const j = await r.json();
-      const q = parseQuote(j);
-      if (q) out[sym] = q;
-    } catch { /* skip */ }
-  }));
-  return res.status(200).json(out);
+    const out = {};
+    await Promise.all(symbols.map(async (sym) => {
+      try {
+        const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        const r = await fetch(url, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            Accept: "application/json",
+          },
+        });
+        clearTimeout(timer);
+        if (!r.ok) return; // skip this symbol, others may still succeed
+        const j = await r.json();
+        const q = parseQuote(j);
+        if (q) out[sym] = q;
+      } catch { /* skip this symbol only — never let one bad symbol kill the whole response */ }
+    }));
+    return res.status(200).json(out);
+  } catch (e) {
+    // surface the error instead of Vercel returning a bare 0-byte failure
+    return res.status(200).json({ error: String(e && e.message || e) });
+  }
 }

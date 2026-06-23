@@ -30,19 +30,27 @@ function parseQuote(j) {
 export async function onRequest(context) {
   const url = new URL(context.request.url);
   const headers = { "Access-Control-Allow-Origin": "*", "Content-Type": "application/json", "Cache-Control": "s-maxage=15" };
-  const raw = url.searchParams.get("symbols") || "";
-  const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 60);
-  if (!symbols.length) return new Response(JSON.stringify({ error: "no symbols" }), { status: 400, headers });
+  try {
+    const raw = url.searchParams.get("symbols") || "";
+    const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 60);
+    if (!symbols.length) return new Response(JSON.stringify({ error: "no symbols" }), { status: 400, headers });
 
-  const out = {};
-  await Promise.all(symbols.map(async (sym) => {
-    try {
-      const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
-      const r = await fetch(y, { headers: { "User-Agent": "Mozilla/5.0" } });
-      const j = await r.json();
-      const q = parseQuote(j);
-      if (q) out[sym] = q;
-    } catch { /* skip */ }
-  }));
-  return new Response(JSON.stringify(out), { status: 200, headers });
+    const out = {};
+    await Promise.all(symbols.map(async (sym) => {
+      try {
+        const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        const r = await fetch(y, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } });
+        clearTimeout(timer);
+        if (!r.ok) return;
+        const j = await r.json();
+        const q = parseQuote(j);
+        if (q) out[sym] = q;
+      } catch { /* skip this symbol only */ }
+    }));
+    return new Response(JSON.stringify(out), { status: 200, headers });
+  } catch (e) {
+    return new Response(JSON.stringify({ error: String(e && e.message || e) }), { status: 200, headers });
+  }
 }
