@@ -344,7 +344,7 @@ function parseYahooChartQuote(j, sym) {
   // baseline to diff against, and the Korean label, depend on which session we're in
   let base, mkt;
   if (isKR) {
-    // KRX: 장전 시간외(07:30–08:30)는 전일종가 기준, 장후 시간외(15:40~18:00)는 당일종가 기준
+    // NXT: 장전 시간외(08:00–08:50)는 전일종가 기준, 장후 시간외(15:30~20:00)는 당일종가 기준
     if (state === "PRE") { base = prevClose; mkt = "장전 시간외"; }
     else if (state === "POST") { base = regular; mkt = "장후 시간외(종가)"; }
     else if (state === "POSTPOST") { base = regular; mkt = "장후 시간외(단일가)"; }
@@ -698,18 +698,19 @@ function usMarketSession(d = new Date()) {
 }
 
 /* Korean market (KRX/KOSPI/KOSDAQ) session, computed from real KST wall-clock time.
-   정규장 09:00–15:30, 장전 시간외 07:30–08:30(전일종가 기준), 장후 시간외 15:40–16:00(당일종가 기준).
-   08:30–09:00과 15:30–15:40은 동시호가/거래정지 구간이라 "장마감"으로 묶어요. */
+   Reflects NXT (대체거래소) extended hours, now covering most actively-traded names:
+   프리장 08:00–08:50, 정규장 09:00–15:20, 장후 시간외종가 15:20–15:30(당일종가 기준),
+   장후 시간외(단일가/After) 15:30–20:00. */
 function krMarketSession(d = new Date()) {
   const kstParts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(d);
   const get = (t) => kstParts.find((p) => p.type === t)?.value;
   const wd = get("weekday"); const mins = Number(get("hour")) * 60 + Number(get("minute"));
   const isWeekend = wd === "Sat" || wd === "Sun";
   if (isWeekend) return { key: "CLOSED", label: "휴장(주말)" };
-  if (mins >= 7 * 60 + 30 && mins < 8 * 60 + 30) return { key: "PRE", label: "장전 시간외" };
-  if (mins >= 9 * 60 && mins < 15 * 60 + 30) return { key: "REGULAR", label: "정규장" };
-  if (mins >= 15 * 60 + 40 && mins < 16 * 60) return { key: "POST", label: "장후 시간외(종가)" };
-  if (mins >= 16 * 60 && mins < 18 * 60) return { key: "POSTPOST", label: "장후 시간외(단일가)" };
+  if (mins >= 8 * 60 && mins < 8 * 60 + 50) return { key: "PRE", label: "장전 시간외" };
+  if (mins >= 9 * 60 && mins < 15 * 60 + 20) return { key: "REGULAR", label: "정규장" };
+  if (mins >= 15 * 60 + 20 && mins < 15 * 60 + 30) return { key: "POST", label: "장후 시간외(종가)" };
+  if (mins >= 15 * 60 + 30 && mins < 20 * 60) return { key: "POSTPOST", label: "장후 시간외(단일가)" };
   return { key: "CLOSED", label: "장마감" };
 }
 

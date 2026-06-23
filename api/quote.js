@@ -19,18 +19,21 @@ function usSessionFromET() {
   return "CLOSED";
 }
 
-// KRX session: 정규장 09:00–15:30, 장전 시간외 07:30–08:30(전일종가 기준),
-// 장후 시간외종가 15:40–16:00(당일종가 기준), 장후 시간외단일가 16:00–18:00(당일종가 기준).
+// KR session, reflecting NXT (대체거래소) extended hours which now apply to most actively-traded
+// KOSPI/KOSDAQ names: 프리장 08:00–08:50, 정규장 09:00–15:20, 장후 시간외종가 15:20–15:30
+// (당일종가 기준), 장후 시간외(단일가/After) 15:30–20:00 (당일종가 ±10% 단일가 체결).
+// Legacy KRX-only names without NXT listing technically close their 시간외단일가 at 18:00, but we
+// default to the NXT schedule since that now covers the large-cap names most portfolios hold.
 function krSessionFromKST() {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-US", { timeZone: "Asia/Seoul", hour: "2-digit", minute: "2-digit", hour12: false, weekday: "short" }).formatToParts(now);
   const get = (t) => parts.find((p) => p.type === t)?.value;
   const wd = get("weekday"); const mins = Number(get("hour")) * 60 + Number(get("minute"));
   if (wd === "Sat" || wd === "Sun") return "CLOSED";
-  if (mins >= 7 * 60 + 30 && mins < 8 * 60 + 30) return "PRE";
-  if (mins >= 9 * 60 && mins < 15 * 60 + 30) return "REGULAR";
-  if (mins >= 15 * 60 + 40 && mins < 16 * 60) return "POST";
-  if (mins >= 16 * 60 && mins < 18 * 60) return "POSTPOST";
+  if (mins >= 8 * 60 && mins < 8 * 60 + 50) return "PRE";
+  if (mins >= 9 * 60 && mins < 15 * 60 + 20) return "REGULAR";
+  if (mins >= 15 * 60 + 20 && mins < 15 * 60 + 30) return "POST";
+  if (mins >= 15 * 60 + 30 && mins < 20 * 60) return "POSTPOST";
   return "CLOSED";
 }
 
