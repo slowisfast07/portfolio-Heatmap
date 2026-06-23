@@ -591,12 +591,22 @@ async function lookupTicker(query) {
   if (KR_NAME_MAP[trimmed]) {
     return { symbol: KR_NAME_MAP[trimmed], name: trimmed, sector: null };
   }
-  // 2) our backend (Yahoo search)
+  // 2) our backend (Yahoo search) — should normally succeed and skip the proxy chain entirely
   try {
-    const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(trimmed)}`);
-    if (r.ok) { const j = await r.json(); if (j && j[trimmed] && j[trimmed].symbol) return j[trimmed]; }
-  } catch { /* fall through */ }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(trimmed)}`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j[trimmed] && j[trimmed].symbol) { console.log("[lookupTicker] /api/lookup OK:", j[trimmed]); return j[trimmed]; }
+      console.warn("[lookupTicker] /api/lookup returned no match for:", trimmed, j);
+    } else {
+      console.warn("[lookupTicker] /api/lookup HTTP error:", r.status);
+    }
+  } catch (e) { console.warn("[lookupTicker] /api/lookup threw:", e?.name || e); }
   // 3) direct Yahoo search via proxy fallback chain (works in local/preview, or if /api/lookup is down)
+  console.log("[lookupTicker] falling back to proxy chain for:", trimmed);
   try {
     const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(trimmed)}&quotesCount=10&newsCount=0`;
     const j = await fetchViaProxies(u);
@@ -619,6 +629,19 @@ async function lookupCandidates(query) {
   Object.keys(KR_NAME_MAP).forEach((nm) => {
     if (out.length < 6 && nm.toLowerCase().includes(ql)) { const sym = KR_NAME_MAP[nm]; if (!seen.has(sym)) { seen.add(sym); out.push({ symbol: sym, name: nm }); } }
   });
+  // try our own backend first (no external proxy needed if this works)
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 4000);
+    const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(q)}&multi=1`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (r.ok) {
+      const j = await r.json();
+      const list = Array.isArray(j?.[q]?.candidates) ? j[q].candidates : (j?.[q]?.symbol ? [j[q]] : []);
+      list.forEach((x) => { if (x.symbol && !seen.has(x.symbol)) { seen.add(x.symbol); out.push({ symbol: x.symbol, name: x.name || "" }); } });
+      if (out.length) return out.slice(0, 8);
+    }
+  } catch { /* fall through to proxy chain */ }
   try {
     const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
     const j = await fetchViaProxies(u, { timeoutMs: 4000 }); // autocomplete needs to feel snappy

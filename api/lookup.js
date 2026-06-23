@@ -7,6 +7,7 @@ export default async function handler(req, res) {
   res.setHeader("Cache-Control", "s-maxage=86400, stale-while-revalidate=604800");
 
   const raw = (req.query.symbols || "").toString();
+  const multi = (req.query.multi || "").toString() === "1";
   const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 60);
   if (!symbols.length) return res.status(400).json({ error: "no symbols" });
 
@@ -16,7 +17,7 @@ export default async function handler(req, res) {
       try {
         const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
           sym
-        )}&quotesCount=4&newsCount=0`;
+        )}&quotesCount=${multi ? 8 : 4}&newsCount=0`;
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 6000);
         const r = await fetch(u, {
@@ -30,6 +31,13 @@ export default async function handler(req, res) {
         if (!r.ok) return;
         const j = await r.json();
         const quotes = j?.quotes || [];
+        if (multi) {
+          const candidates = quotes
+            .filter((x) => x.symbol && (x.quoteType === "EQUITY" || x.quoteType === "ETF" || x.quoteType === "CRYPTOCURRENCY" || !x.quoteType))
+            .map((x) => ({ symbol: x.symbol, name: x.longname || x.shortname || "" }));
+          out[sym] = { candidates };
+          return;
+        }
         const hangul = /[\uAC00-\uD7A3]/.test(sym);
         const q = (hangul
           ? quotes.find((x) => /\.(KS|KQ)$/i.test(x.symbol || ""))
