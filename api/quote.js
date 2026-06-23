@@ -58,9 +58,16 @@ function parseQuote(j, sym) {
 
   let base, mkt;
   if (isKR) {
+    // IMPORTANT: for POST/POSTPOST we deliberately use `prevClose`, not `regular`.
+    // Yahoo's `regularMarketPrice` is NOT a frozen end-of-regular-session close — it keeps
+    // ticking live through the NXT 장후 시간외 session, since this is the same field Yahoo
+    // calls "current price." Using it as `base` made the % swing wildly (even flip sign)
+    // as both `price` and `base` chased the same live tape. The 시간외단일가 market's own
+    // rule is ±10% of the previous trading day's close, so `prevClose` is both the stable
+    // and the officially correct baseline for these two states.
     if (state === "PRE") { base = prevClose; mkt = "장전 시간외"; }
-    else if (state === "POST") { base = regular; mkt = "장후 시간외(종가)"; }
-    else if (state === "POSTPOST") { base = regular; mkt = "장후 시간외(단일가)"; }
+    else if (state === "POST") { base = prevClose; mkt = "장후 시간외(종가)"; }
+    else if (state === "POSTPOST") { base = prevClose; mkt = "장후 시간외(단일가)"; }
     else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
     else { base = prevClose; mkt = "장마감"; }
   } else {

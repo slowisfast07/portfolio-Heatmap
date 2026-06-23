@@ -344,10 +344,14 @@ function parseYahooChartQuote(j, sym) {
   // baseline to diff against, and the Korean label, depend on which session we're in
   let base, mkt;
   if (isKR) {
-    // NXT: 장전 시간외(08:00–08:50)는 전일종가 기준, 장후 시간외(15:30~20:00)는 당일종가 기준
+    // IMPORTANT: use `prevClose`, not `regular`, for POST/POSTPOST — Yahoo's regularMarketPrice
+    // keeps ticking live through the NXT 장후 시간외 session rather than staying frozen at the
+    // regular-session close, so using it as `base` makes the % swing wildly (even flip sign).
+    // 시간외단일가 is officially ±10% of the previous trading day's close, so `prevClose` is
+    // both the stable and the correct baseline here.
     if (state === "PRE") { base = prevClose; mkt = "장전 시간외"; }
-    else if (state === "POST") { base = regular; mkt = "장후 시간외(종가)"; }
-    else if (state === "POSTPOST") { base = regular; mkt = "장후 시간외(단일가)"; }
+    else if (state === "POST") { base = prevClose; mkt = "장후 시간외(종가)"; }
+    else if (state === "POSTPOST") { base = prevClose; mkt = "장후 시간외(단일가)"; }
     else if (state === "REGULAR") { base = prevClose; mkt = "정규장"; }
     else { base = prevClose; mkt = "장마감"; }
   } else {
