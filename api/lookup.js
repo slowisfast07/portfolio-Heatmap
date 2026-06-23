@@ -17,7 +17,17 @@ export default async function handler(req, res) {
         const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
           sym
         )}&quotesCount=4&newsCount=0`;
-        const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0" } });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        const r = await fetch(u, {
+          signal: controller.signal,
+          headers: {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            Accept: "application/json",
+          },
+        });
+        clearTimeout(timer);
+        if (!r.ok) return;
         const j = await r.json();
         const quotes = j?.quotes || [];
         const hangul = /[\uAC00-\uD7A3]/.test(sym);
@@ -26,7 +36,7 @@ export default async function handler(req, res) {
           : quotes.find((x) => (x.symbol || "").toUpperCase() === sym.toUpperCase())) || quotes[0];
         if (q) out[sym] = { symbol: q.symbol || null, name: q.longname || q.shortname || null, sector: q.sector || null };
       } catch {
-        /* skip */
+        /* skip this symbol only */
       }
     })
   );

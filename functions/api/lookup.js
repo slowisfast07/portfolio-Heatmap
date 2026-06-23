@@ -22,7 +22,11 @@ export async function onRequest(context) {
         const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(
           sym
         )}&quotesCount=4&newsCount=0`;
-        const r = await fetch(u, { headers: { "User-Agent": "Mozilla/5.0" } });
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        const r = await fetch(u, { signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0", Accept: "application/json" } });
+        clearTimeout(timer);
+        if (!r.ok) return;
         const j = await r.json();
         const quotes = j?.quotes || [];
         const hangul = /[\uAC00-\uD7A3]/.test(sym);

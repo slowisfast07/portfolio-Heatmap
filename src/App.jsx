@@ -369,26 +369,24 @@ function parseYahooChartQuote(j, sym) {
 async function fetchStocks(symbols) {
   if (!symbols.length) return {};
   try {
-    const r = await fetch(`/api/quote?symbols=${encodeURIComponent(symbols.join(","))}`);
-    if (r.ok) { const j = await r.json(); if (j && !j.error && Object.keys(j).length) return j; }
-  } catch { /* fall through */ }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const r = await fetch(`/api/quote?symbols=${encodeURIComponent(symbols.join(","))}`, { signal: controller.signal });
+    clearTimeout(timer);
+    if (r.ok) {
+      const j = await r.json();
+      if (j && !j.error && Object.keys(j).length) { console.log("[fetchStocks] /api/quote OK:", j); return j; }
+      console.warn("[fetchStocks] /api/quote returned empty/error:", j);
+    } else {
+      console.warn("[fetchStocks] /api/quote HTTP error:", r.status);
+    }
+  } catch (e) { console.warn("[fetchStocks] /api/quote threw:", e); }
+  console.log("[fetchStocks] falling back to proxy chain for:", symbols);
   const out = {};
   await Promise.all(symbols.map(async (sym) => {
     const y = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(sym)}?range=1d&interval=2m&includePrePost=true`;
-    // try allorigins first, then corsproxy.io as a backup if that proxy service itself is down
-    const proxies = [
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(y)}`,
-      `https://corsproxy.io/?url=${encodeURIComponent(y)}`,
-    ];
-    for (const proxyUrl of proxies) {
-      try {
-        const r = await fetch(proxyUrl);
-        if (!r.ok) continue;
-        const j = await r.json();
-        const q = parseYahooChartQuote(j, sym);
-        if (q) { out[sym] = q; break; }
-      } catch { /* try next proxy */ }
-    }
+    const j = await fetchViaProxies(y);
+    if (j) { const q = parseYahooChartQuote(j, sym); if (q) { out[sym] = q; console.log(`[fetchStocks] ${sym} via proxy:`, q); } }
   }));
   return out;
 }
@@ -563,6 +561,30 @@ const tossUrl = (sym) => `https://www.tossinvest.com/stocks/${encodeURIComponent
 const redditUrl = (sym) => `https://www.reddit.com/search/?q=${encodeURIComponent(bareCode(sym) + " stock")}`;
 const edgarUrl = (q) => `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&company=${encodeURIComponent(q)}&type=13F-HR&dateb=&owner=include&count=40`;
 
+/* Shared helper: fetch a URL through a sequence of free CORS proxies, each with its own
+   timeout, so a single dead/slow/rate-limited proxy (these go down unpredictably) doesn't
+   stall the whole call or silently break the feature. Returns parsed JSON or null. */
+async function fetchViaProxies(targetUrl, { timeoutMs = 6000 } = {}) {
+  const proxies = [
+    `https://api.allorigins.win/raw?url=${encodeURIComponent(targetUrl)}`,
+    `https://corsproxy.io/?url=${encodeURIComponent(targetUrl)}`,
+    `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(targetUrl)}`,
+  ];
+  for (const proxyUrl of proxies) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const r = await fetch(proxyUrl, { signal: controller.signal });
+      clearTimeout(timer);
+      if (!r.ok) { console.warn("[fetchViaProxies] proxy HTTP error:", proxyUrl.split("?")[0], r.status); continue; }
+      return await r.json();
+    } catch (e) {
+      console.warn("[fetchViaProxies] proxy failed:", proxyUrl.split("?")[0], e?.name || e);
+    }
+  }
+  return null;
+}
+
 async function lookupTicker(query) {
   const trimmed = (query || "").trim();
   // 1) Korean name map → instant, reliable
@@ -574,11 +596,10 @@ async function lookupTicker(query) {
     const r = await fetch(`/api/lookup?symbols=${encodeURIComponent(trimmed)}`);
     if (r.ok) { const j = await r.json(); if (j && j[trimmed] && j[trimmed].symbol) return j[trimmed]; }
   } catch { /* fall through */ }
-  // 3) direct Yahoo search via public proxy (works in local/preview)
+  // 3) direct Yahoo search via proxy fallback chain (works in local/preview, or if /api/lookup is down)
   try {
     const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(trimmed)}&quotesCount=10&newsCount=0`;
-    const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`);
-    const j = await r.json();
+    const j = await fetchViaProxies(u);
     const quotes = (j?.quotes || []).filter((x) => x.symbol && (x.quoteType === "EQUITY" || x.quoteType === "ETF" || !x.quoteType));
     const hangul = /[\uAC00-\uD7A3]/.test(trimmed);
     const q = (hangul
@@ -600,8 +621,7 @@ async function lookupCandidates(query) {
   });
   try {
     const u = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=8&newsCount=0`;
-    const r = await fetch(`https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`);
-    const j = await r.json();
+    const j = await fetchViaProxies(u, { timeoutMs: 4000 }); // autocomplete needs to feel snappy
     (j?.quotes || []).forEach((x) => {
       if (x.symbol && !seen.has(x.symbol) && (x.quoteType === "EQUITY" || x.quoteType === "ETF" || x.quoteType === "CRYPTOCURRENCY" || !x.quoteType)) {
         seen.add(x.symbol); out.push({ symbol: x.symbol, name: x.longname || x.shortname || "" });
