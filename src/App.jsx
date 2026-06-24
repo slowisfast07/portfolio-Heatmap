@@ -1140,18 +1140,33 @@ export default function App() {
         @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
         input[type=range]{accent-color:${th.accent};}
         @media (max-width:900px){.ph-grid{grid-template-columns:1fr !important;}}
+        @media (max-width:640px){
+          .app-header{flex-wrap:wrap !important;padding:11px 14px !important;gap:9px !important;}
+          .app-brand .brand-name{display:none !important;}
+          .app-headline{order:9 !important;width:100% !important;text-align:left !important;margin-right:0 !important;}
+          .app-headline .app-delta{justify-content:flex-start !important;}
+          .app-headline .app-total{font-size:26px !important;}
+          .app-status{flex-wrap:wrap !important;padding:7px 14px !important;gap:3px 9px !important;}
+          .app-status .hide-sm{display:none !important;}
+          .app-body{padding:14px 13px !important;gap:13px !important;}
+          .app-navwrap{position:static !important;}
+          .app-nav{padding:0 13px !important;}
+          .sec{scroll-margin-top:120px !important;}
+          .hero-band{padding:32px 22px !important;}
+          .hero-band .hero-title{font-size:clamp(30px,8.5vw,46px) !important;}
+        }
       `}</style>
 
       {/* HEADER */}
-      <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: `1px solid ${th.border}`, background: th.panel, position: "sticky", top: 0, zIndex: 20 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+      <header className="app-header" style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: `1px solid ${th.border}`, background: th.panel, position: "sticky", top: 0, zIndex: 20 }}>
+        <div className="app-brand" style={{ display: "flex", alignItems: "center", gap: 11 }}>
           <div style={{ width: 34, height: 34, borderRadius: 11, background: th.accent, display: "grid", placeItems: "center", fontSize: 18, color: th.onAccent, ...DISP }}>P</div>
-          <div style={{ fontSize: 16.5, ...DISP }}>{CONFIG.productName}</div>
+          <div className="brand-name" style={{ fontSize: 16.5, ...DISP }}>{CONFIG.productName}</div>
         </div>
         <div style={{ flex: 1 }} />
-        <div style={{ textAlign: "right", marginRight: 6 }}>
-          <div className="num" style={{ fontSize: 23, ...DISP }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
-          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 3 }}>
+        <div className="app-headline" style={{ textAlign: "right", marginRight: 6 }}>
+          <div className="num app-total" style={{ fontSize: 23, ...DISP }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
+          <div className="app-delta" style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 3 }}>
             <DeltaPill th={th} label="오늘" v={dayChange} />
             <DeltaPill th={th} label="수익" v={totalReturn} />
           </div>
@@ -1162,7 +1177,7 @@ export default function App() {
       </header>
 
       {/* STATUS */}
-      <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "8px 22px", fontSize: 11.5, color: th.textDim, borderBottom: `1px solid ${th.border}` }}>
+      <div className="app-status" style={{ display: "flex", alignItems: "center", gap: 14, padding: "8px 22px", fontSize: 11.5, color: th.textDim, borderBottom: `1px solid ${th.border}` }}>
         <span style={{ display: "flex", alignItems: "center", gap: 5 }}>
           {fxLive ? <Wifi size={12} color={th.heatPos} /> : <WifiOff size={12} color={th.textFaint} />}
           USD/KRW <b className="num" style={{ color: th.text }}>{fmt(rate, 1)}</b><span style={{ color: th.textFaint }}>{fxLive ? "실시간" : "추정"}</span>
@@ -1181,11 +1196,11 @@ export default function App() {
         <span style={{ color: th.textFaint }}>·</span>
         <span>업데이트 {lastUpdate ? lastUpdate.toLocaleTimeString() : "—"} <span style={{ color: th.textFaint }}>(60초마다 자동)</span></span>
         {savedAt && !previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.heatPos }}>✓ 자동 저장됨</span></>}
-        <span style={{ color: th.textFaint, opacity: 0.5 }} title="배포 빌드 확인용 — 이 표시가 안 보이면 옛 버전입니다">· build:kr-div-2026-06-23</span>
+        <span className="hide-sm" style={{ color: th.textFaint, opacity: 0.5 }} title="배포 빌드 확인용 — 이 표시가 안 보이면 옛 버전입니다">· build:kr-div-2026-06-23</span>
         {previewMode && <><span style={{ color: th.textFaint }}>·</span><span style={{ color: th.textFaint }}>미리보기(저장 안 됨)</span></>}
-        <div style={{ flex: 1 }} />
-        <button className="ph-btn navbtn" onClick={exportData} title="모든 데이터를 JSON 파일로 저장" style={{ background: "transparent", border: "none", color: th.textDim, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "3px 7px", borderRadius: 6 }}>⤓ 백업</button>
-        <label className="navbtn" title="JSON 백업 파일에서 복원" style={{ color: th.textDim, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "3px 7px", borderRadius: 6 }}>⤒ 복원
+        <div className="hide-sm" style={{ flex: 1 }} />
+        <button className="ph-btn navbtn hide-sm" onClick={exportData} title="모든 데이터를 JSON 파일로 저장" style={{ background: "transparent", border: "none", color: th.textDim, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "3px 7px", borderRadius: 6 }}>⤓ 백업</button>
+        <label className="navbtn hide-sm" title="JSON 백업 파일에서 복원" style={{ color: th.textDim, fontSize: 11.5, fontWeight: 700, cursor: "pointer", padding: "3px 7px", borderRadius: 6 }}>⤒ 복원
           <input type="file" accept="application/json,.json" onChange={(e) => { importData(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
         </label>
       </div>
@@ -1194,7 +1209,7 @@ export default function App() {
       <TopNav th={th} onHelp={() => { setShowWelcome(true); setWelcomeDismissed(false); window.scrollTo({ top: 0, behavior: "smooth" }); }} />
 
       {/* BODY */}
-      <div style={{ maxWidth: "100%", margin: "0 auto", padding: "18px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+      <div className="app-body" style={{ maxWidth: "100%", margin: "0 auto", padding: "18px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
         {previewMode && (
           <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 16, border: `1px solid ${th.accent}`, background: th.panelAlt }}>
             <span style={{ fontSize: 18 }}>👀</span>
@@ -2020,8 +2035,8 @@ const NAV = [
 function TopNav({ th, onHelp }) {
   const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
   return (
-    <div style={{ position: "sticky", top: 63, zIndex: 15, background: th.bg, borderBottom: `1px solid ${th.border}` }}>
-      <div style={{ maxWidth: "100%", margin: "0 auto", padding: "0 24px", display: "flex", gap: 2, overflowX: "auto", alignItems: "center" }}>
+    <div className="app-navwrap" style={{ position: "sticky", top: 63, zIndex: 15, background: th.bg, borderBottom: `1px solid ${th.border}` }}>
+      <div className="app-nav" style={{ maxWidth: "100%", margin: "0 auto", padding: "0 24px", display: "flex", gap: 2, overflowX: "auto", alignItems: "center" }}>
         {NAV.map(([id, label]) => (
           <button key={id} className="navbtn" onClick={() => go(id)} style={{ flexShrink: 0, background: "transparent", border: "none", color: th.textDim, fontWeight: 700, fontSize: 13, padding: "11px 13px", borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{label}</button>
         ))}
@@ -2294,11 +2309,11 @@ function WelcomeBanner({ th, onSample, onAdd, onClose }) {
   // Wise "hero-band-dark": near-black ink surface with a lime headline — the brand's
   // signature polarity-flipped hero moment.
   return (
-    <div style={{ position: "relative", borderRadius: 24, padding: "48px 44px", background: "#0e0f0c", overflow: "hidden" }}>
+    <div className="hero-band" style={{ position: "relative", borderRadius: 24, padding: "48px 44px", background: "#0e0f0c", overflow: "hidden" }}>
       <div style={{ position: "absolute", right: -60, top: -60, width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, rgba(159,232,112,.20), transparent 70%)" }} />
       <button className="ph-btn" onClick={onClose} style={{ display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: 9999, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.16)", color: "#e8ebe6", cursor: "pointer", position: "absolute", right: 16, top: 16 }}>✕</button>
       <div style={{ position: "relative", maxWidth: 760 }}>
-        <div style={{ fontSize: "clamp(34px, 5vw, 56px)", color: th.accent, marginBottom: 16, ...DISP_HERO }}>내 모든 자산을<br />한 화면에.</div>
+        <div className="hero-title" style={{ fontSize: "clamp(34px, 5vw, 56px)", color: th.accent, marginBottom: 16, ...DISP_HERO }}>내 모든 자산을<br />한 화면에.</div>
         <p style={{ fontSize: 17, color: "#e8ebe6", lineHeight: 1.6, maxWidth: 620, margin: "0 0 28px" }}>
           미국·한국 주식과 코인을 넣으면 <b style={{ color: "#ffffff" }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
           티커만 입력하면 이름·섹터·시세가 알아서 채워집니다. 처음이라면 예시로 먼저 둘러보세요.
