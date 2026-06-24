@@ -71,31 +71,31 @@ async function submitFeedback(payload) {
 
 
 /* ------------------------------------------------------------------ *
- *  THEME  (Binance design system — yellow #fcd535 on near-black)       *
- *  Dark = marketing/dashboard floor (canvas-dark #0b0e11)             *
- *  Light = transactional surfaces. Yellow CTA + green/red price       *
- *  semantics are shared across both modes.                            *
+ *  THEME  (TradingView design system — blue #2962ff on blue-black)     *
+ *  Dark = signature TradingView chart canvas (#131722 / panel #1e222d) *
+ *  Light = clean white surfaces. Blue CTA + teal-green/red price       *
+ *  semantics (up #26a69a / down #ef5350) shared across both modes.     *
  * ------------------------------------------------------------------ */
 const THEMES = {
   dark: {
-    name: "dark", bg: "#0b0e11", panel: "#1e2329", panelAlt: "#2b3139", border: "#2b3139",
-    borderHover: "#474d57", text: "#eaecef", textDim: "#929aa5", textFaint: "#707a8a",
-    accent: "#fcd535", accentActive: "#f0b90b", onAccent: "#181a20", accentGlow: "rgba(252,213,53,.32)",
-    inputBg: "#1e2329", heatPos: "#0ecb81", heatNeg: "#f6465d", heatNeu: "#2b3139",
-    rowHover: "#2b3139", band: "#181a20",
-    posBg: "rgba(14,203,129,.16)", negBg: "rgba(246,70,93,.16)",
-    cardShadow: "0 6px 20px rgba(0,0,0,.36)",
-    heroGlow: "linear-gradient(180deg, rgba(252,213,53,.10), transparent 72%)",
+    name: "dark", bg: "#131722", panel: "#1e222d", panelAlt: "#2a2e39", border: "#2a2e39",
+    borderHover: "#363a45", text: "#d1d4dc", textDim: "#787b86", textFaint: "#5d606b",
+    accent: "#2962ff", accentActive: "#1e53e5", onAccent: "#ffffff", accentGlow: "rgba(41,98,255,.32)",
+    inputBg: "#1e222d", heatPos: "#26a69a", heatNeg: "#ef5350", heatNeu: "#2a2e39",
+    rowHover: "#2a2e39", band: "#161a25",
+    posBg: "rgba(38,166,154,.16)", negBg: "rgba(239,83,80,.16)",
+    cardShadow: "0 2px 8px rgba(0,0,0,.40)",
+    heroGlow: "linear-gradient(180deg, rgba(41,98,255,.10), transparent 72%)",
   },
   light: {
-    name: "light", bg: "#fafafa", panel: "#ffffff", panelAlt: "#f5f5f5", border: "#eaecef",
-    borderHover: "#cdd1d6", text: "#181a20", textDim: "#707a8a", textFaint: "#929aa5",
-    accent: "#fcd535", accentActive: "#f0b90b", onAccent: "#181a20", accentGlow: "rgba(252,213,53,.30)",
-    inputBg: "#ffffff", heatPos: "#0ecb81", heatNeg: "#f6465d", heatNeu: "#eaecef",
-    rowHover: "#f5f5f5", band: "#fafafa",
-    posBg: "rgba(14,203,129,.13)", negBg: "rgba(246,70,93,.12)",
-    cardShadow: "0 6px 20px rgba(24,26,32,.10)",
-    heroGlow: "linear-gradient(180deg, rgba(252,213,53,.10), transparent 72%)",
+    name: "light", bg: "#ffffff", panel: "#ffffff", panelAlt: "#f0f3fa", border: "#e0e3eb",
+    borderHover: "#d1d4dc", text: "#131722", textDim: "#787b86", textFaint: "#9598a1",
+    accent: "#2962ff", accentActive: "#1e53e5", onAccent: "#ffffff", accentGlow: "rgba(41,98,255,.28)",
+    inputBg: "#ffffff", heatPos: "#089981", heatNeg: "#f23645", heatNeu: "#e0e3eb",
+    rowHover: "#f0f3fa", band: "#f8f9fd",
+    posBg: "rgba(8,153,129,.12)", negBg: "rgba(242,54,69,.12)",
+    cardShadow: "0 2px 8px rgba(19,23,34,.08)",
+    heroGlow: "linear-gradient(180deg, rgba(41,98,255,.08), transparent 72%)",
   },
 };
 
@@ -1109,10 +1109,10 @@ export default function App() {
   const capNow = heatMode === "return" ? capReturn : capChange;
 
   return (
-    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: "Inter, system-ui, sans-serif" }}>
+    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
       <style>{`
-        .num{font-family:'JetBrains Mono','Inter',ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;font-feature-settings:"tnum";letter-spacing:-0.01em;}
-        input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:#3b82f6!important;box-shadow:0 0 0 2px rgba(59,130,246,.5);}
+        .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";letter-spacing:0;}
+        input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:#2962ff!important;box-shadow:0 0 0 2px rgba(41,98,255,.45);}
         .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
         .ph-primary:hover{box-shadow:0 4px 16px ${th.accentGlow};}
         .ph-card{transition:box-shadow .2s, border-color .2s, transform .2s;}
@@ -2310,9 +2310,9 @@ function FeedbackCard({ onOpen }) {
         boxSizing: "border-box",
         padding: "44px 32px 32px",
         borderRadius: 12,
-        border: "1px solid #2b3139",
-        background: "#1e2329",
-        boxShadow: "0 6px 20px rgba(0,0,0,.36)",
+        border: "1px solid #2a2e39",
+        background: "#1e222d",
+        boxShadow: "0 2px 8px rgba(0,0,0,.40)",
         textAlign: "center",
         overflow: "hidden",
       }}
@@ -2325,9 +2325,9 @@ function FeedbackCard({ onOpen }) {
           right: 18,
           fontSize: 13,
           fontWeight: 600,
-          color: "#fcd535",
-          background: "rgba(252,213,53,.14)",
-          border: "1px solid rgba(252,213,53,.38)",
+          color: "#2962ff",
+          background: "rgba(41,98,255,.14)",
+          border: "1px solid rgba(41,98,255,.38)",
           padding: "5px 14px",
           borderRadius: 9999,
         }}
@@ -2345,22 +2345,22 @@ function FeedbackCard({ onOpen }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#fcd535",
+          background: "#2962ff",
         }}
       >
         <svg width="38" height="38" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
-            stroke="#181a20" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
 
       {/* title */}
-      <div style={{ fontSize: 28, fontWeight: 700, color: "#eaecef", letterSpacing: "-0.02em", marginBottom: 12 }}>
+      <div style={{ fontSize: 28, fontWeight: 700, color: "#d1d4dc", letterSpacing: "-0.02em", marginBottom: 12 }}>
         의견 보내기
       </div>
 
       {/* subtitle */}
-      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#929aa5", maxWidth: 340, margin: "0 auto 28px" }}>
+      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#787b86", maxWidth: 340, margin: "0 auto 28px" }}>
         쓰면서 불편한 점이나 더 있으면 좋겠는 기능을 알려주시면 빠르게 반영할게요
       </div>
 
@@ -2377,8 +2377,8 @@ function FeedbackCard({ onOpen }) {
           cursor: "pointer",
           fontSize: 16,
           fontWeight: 600,
-          color: "#181a20",
-          background: hover ? "#f0b90b" : "#fcd535",
+          color: "#ffffff",
+          background: hover ? "#1e53e5" : "#2962ff",
           transition: "all .18s ease",
         }}
       >
