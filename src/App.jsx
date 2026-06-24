@@ -57,6 +57,8 @@ const SAMPLE_HOLDINGS = [
   { type: "commodity", ticker: "SLV", name: "iShares Silver Trust", sector: "현물자산", qty: 60, avgCost: 22, price: 31, chg: 1.1, cur: "USD", buyDate: "2024-07-10", rsi: 61, bbPos: 68, divYield: 0 },
   { type: "reit", ticker: "O", name: "Realty Income", sector: "부동산", qty: 60, avgCost: 54, price: 58, chg: -0.3, cur: "USD", buyDate: "2024-03-15", rsi: 49, bbPos: 44, divYield: 5.6 },
   { type: "kr", ticker: "055550.KS", name: "신한지주", sector: "배당주", qty: 70, avgCost: 46000, price: 58000, chg: 0.5, cur: "KRW", buyDate: "2024-02-20", rsi: 56, bbPos: 60, divYield: 5.1 },
+  { type: "bond", ticker: "TLT", name: "iShares 20+ Year Treasury Bond ETF", sector: "채권", qty: 120, avgCost: 95, price: 88, chg: -0.2, cur: "USD", buyDate: "2024-03-12", rsi: 42, bbPos: 30, divYield: 4.2 },
+  { type: "bond", ticker: "IEF", name: "iShares 7-10 Year Treasury Bond ETF", sector: "채권", qty: 60, avgCost: 96, price: 94, chg: -0.1, cur: "USD", buyDate: "2024-06-03", rsi: 46, bbPos: 36, divYield: 3.4 },
 ];
 
 /* feedback / waitlist — POSTs to /api/feedback (forwards to your webhook).
@@ -117,6 +119,21 @@ const SECTORS = [
 const PALETTE = ["#16c784", "#3b82f6", "#22c1e0", "#f5a623", "#e5484d", "#8b5cf6", "#ec4899", "#0fb9b1", "#fc6e51", "#5b7cfa", "#84cc16", "#fb7185", "#f7b500", "#06b6d4"];
 const CASH_COLOR = "#7c8794";
 const RESERVED_COLORS = { Cash: CASH_COLOR, Crypto: "#f7b500" };
+
+/* Top-level asset-class buckets for the allocation donut's default ("자산군") view.
+   Each detailed sector (Korean or English) rolls up into one of these. The detailed
+   breakdown is still available behind the "세부내용" toggle. */
+const ASSET_CLASS_ORDER = ["주식", "크립토", "채권", "부동산", "현물자산", "현금"];
+const ASSET_CLASS_COLORS = { "주식": "#3b82f6", "크립토": "#f7b500", "채권": "#0fb9b1", "부동산": "#ec4899", "현물자산": "#fc6e51", "현금": CASH_COLOR };
+function assetClassOf(sector) {
+  const s = (sector || "").toLowerCase();
+  if (sector === "현금" || sector === "Cash" || s === "cash") return "현금";
+  if (sector === "채권" || /\bbond|fixed income|treasury|국채|국고채/.test(s)) return "채권";
+  if (sector === "부동산" || sector === "Real Estate" || /real estate|reit|리츠/.test(s)) return "부동산";
+  if (sector === "현물자산" || /commodit|원자재|\bgold\b|\bsilver\b|귀금속/.test(s)) return "현물자산";
+  if (sector === "크립토" || sector === "Crypto" || s === "crypto") return "크립토";
+  return "주식";
+}
 /* build a stable, distinct color per sector from the (value-sorted) list */
 function buildColorMap(sectors) {
   const m = {}; let p = 0;
@@ -286,6 +303,7 @@ function typeChangePatch(t, currentSector, currentCur) {
   if (t === "crypto") patch.sector = "Crypto";
   else if (t === "commodity") patch.sector = "현물자산";
   else if (t === "reit") patch.sector = "부동산";
+  else if (t === "bond") patch.sector = "채권";
   else patch.sector = currentSector;
   return patch;
 }
@@ -297,6 +315,7 @@ const TYPE_OPTIONS = (
     <option value="crypto">크립토</option>
     <option value="commodity">현물자산(금·은)</option>
     <option value="reit">리츠/부동산</option>
+    <option value="bond">채권</option>
   </>
 );
 
@@ -897,6 +916,15 @@ export default function App() {
     return Object.entries(m).map(([sector, value]) => ({ sector, value, pct: tot ? (value / tot) * 100 : 0 })).sort((a, b) => b.value - a.value);
   }, [leaves]);
 
+  /* top-level asset-class rollup (현금/주식/부동산/채권/현물자산/크립토) — the donut's default view */
+  const assetClassData = useMemo(() => {
+    const m = {};
+    leaves.forEach((l) => { const k = assetClassOf(l.sector); m[k] = (m[k] || 0) + l.value; });
+    const tot = Object.values(m).reduce((a, b) => a + b, 0);
+    return Object.entries(m).map(([sector, value]) => ({ sector, value, pct: tot ? (value / tot) * 100 : 0 }))
+      .sort((a, b) => (b.value - a.value) || (ASSET_CLASS_ORDER.indexOf(a.sector) - ASSET_CLASS_ORDER.indexOf(b.sector)));
+  }, [leaves]);
+
   /* per-holding allocation for the donut (#종목별 자산 비중) */
   const holdingAllocValue = useMemo(() => {
     const rows = activeHoldings.filter((h) => h.ticker && valueOf(h) > 0).map((h) => ({ sector: bareCode(h.ticker), value: valueOf(h) }));
@@ -958,6 +986,20 @@ export default function App() {
       const sd = await fetchStocks([sym]);
       if (sd[sym]) updateHolding(id, { price: sd[sym].price, chg: sd[sym].chg, mkt: sd[sym].mkt, ...(sd[sym].cur ? { cur: sd[sym].cur } : {}), live: true, sector: "현물자산" });
       track("ticker_resolved", { ticker: sym, type: "commodity" });
+      return;
+    }
+    if (type === "bond") {
+      const sym = raw.toUpperCase();
+      const info = await lookupTicker(raw);
+      const patch = { sector: "채권" };
+      if (info?.symbol) { patch.ticker = info.symbol.toUpperCase(); }
+      if (info?.name) patch.name = info.name;
+      updateHolding(id, patch);
+      const finalSym = patch.ticker || sym;
+      const sd = await fetchStocks([finalSym]);
+      if (sd[finalSym]) updateHolding(id, { price: sd[finalSym].price, chg: sd[finalSym].chg, mkt: sd[finalSym].mkt, ...(sd[finalSym].cur ? { cur: sd[finalSym].cur } : {}), live: true, sector: "채권" });
+      track("ticker_resolved", { ticker: finalSym, type: "bond" });
+      fetchDividendYield(finalSym, patch.name).then((y) => { if (y != null) updateHolding(id, { divYield: y }); });
       return;
     }
     if (type === "reit") {
@@ -1119,7 +1161,7 @@ export default function App() {
   const capNow = heatMode === "return" ? capReturn : capChange;
 
   return (
-    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: 'Inter, system-ui, -apple-system, "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif' }}>
+    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", overflowX: "clip", transition: "background .25s", fontFamily: 'Inter, system-ui, -apple-system, "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif' }}>
       <style>{`
         .num{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:500;letter-spacing:0;}
         .disp{font-weight:500;letter-spacing:-0.02em;}
@@ -1140,7 +1182,7 @@ export default function App() {
         ::-webkit-scrollbar{height:8px;width:8px;} ::-webkit-scrollbar-thumb{background:${th.border};border-radius:4px;}
         @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
         input[type=range]{accent-color:${th.accent};}
-        @media (max-width:900px){.ph-grid{grid-template-columns:1fr !important;}}
+        @media (max-width:900px){.ph-grid{grid-template-columns:minmax(0,1fr) !important;}}
         @media (max-width:640px){
           .app-header{flex-wrap:wrap !important;padding:11px 14px !important;gap:9px !important;}
           .app-brand .brand-name{display:none !important;}
@@ -1272,18 +1314,18 @@ export default function App() {
         </div>
 
         {/* cash + allocation donut (sector / holding toggle) */}
-        <div id="sec-allocation" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }} >
+        <div id="sec-allocation" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16, alignItems: "start" }} >
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             <CashCard th={th} cash={cash} displayCur={displayCur} conv={conv} cashValue={cashValue} cashPct={cashPct}
               investedValue={positionsValue} onAdd={addCash} onUpdate={updateCash} onRemove={removeCash} />
             <FxCard th={th} fx={fxPnl} displayCur={displayCur} />
             <DividendCard th={th} dv={dividendData} displayCur={displayCur} hideAmt={hideAmt} />
           </div>
-          <AllocationDonut th={th} sectorData={sectorData} sectorColorMap={colorMap} holdingValue={holdingAllocValue} holdingCost={holdingAllocCost} holdingColorMap={holdingColorMap} />
+          <AllocationDonut th={th} sectorData={sectorData} assetClassData={assetClassData} assetClassColors={ASSET_CLASS_COLORS} sectorColorMap={colorMap} holdingValue={holdingAllocValue} holdingCost={holdingAllocCost} holdingColorMap={holdingColorMap} />
         </div>
 
         {/* goal + benchmark */}
-        <div id="sec-goal" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, alignItems: "start" }}>
+        <div id="sec-goal" className="sec ph-grid" style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) minmax(0,1fr)", gap: 16, alignItems: "start" }}>
           <GoalCard th={th} goal={goal} setGoal={setGoal} totalAssets={totalAssets} displayCur={displayCur} conv={conv} />
           <BenchmarkCard th={th} dayChange={dayChange} benchmarks={benchmarks} perf={perfSeries} />
         </div>
@@ -2612,16 +2654,27 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur
 /* ------------------------------------------------------------------ *
  *  ALLOCATION DONUT — 섹터별 / 종목별(원금·평가액) 토글                 *
  * ------------------------------------------------------------------ */
-function AllocationDonut({ th, sectorData, sectorColorMap, holdingValue, holdingCost, holdingColorMap }) {
-  const [mode, setMode] = useState("sector"); // sector | holding
+function AllocationDonut({ th, sectorData, assetClassData, assetClassColors, sectorColorMap, holdingValue, holdingCost, holdingColorMap }) {
+  const [mode, setMode] = useState("sector");  // sector | holding
   const [basis, setBasis] = useState("value"); // value | cost
-  const data = mode === "sector" ? sectorData : (basis === "value" ? holdingValue : holdingCost);
-  const cmap = mode === "sector" ? sectorColorMap : holdingColorMap;
-  const sub = mode === "sector" ? `${sectorData.length}개 구성` : (basis === "value" ? "평가액(현재가) 기준" : "원금(평단가) 기준");
+  const [detail, setDetail] = useState(false); // false = 자산군 buckets, true = 세부 섹터
+  const sectorView = mode === "sector";
+  const data = sectorView ? (detail ? sectorData : assetClassData) : (basis === "value" ? holdingValue : holdingCost);
+  const cmap = sectorView ? (detail ? sectorColorMap : assetClassColors) : holdingColorMap;
+  const title = sectorView ? (detail ? "세부 섹터 비중" : "자산군 비중") : "종목별 자산 비중";
+  const sub = sectorView
+    ? (detail ? `${sectorData.length}개 세부 섹터` : `${assetClassData.length}개 자산군 · 현금·주식·부동산·채권·현물자산`)
+    : (basis === "value" ? "평가액(현재가) 기준" : "원금(평단가) 기준");
   return (
-    <Panel th={th} title={mode === "sector" ? "섹터별 자산 비중" : "종목별 자산 비중"} sub={sub}
-      titleExtra={<Segmented th={th} value={mode} onChange={setMode} options={[["sector", "섹터별"], ["holding", "종목별"]]} />}>
-      {mode === "holding" && (
+    <Panel th={th} title={title} sub={sub}
+      titleExtra={<Segmented th={th} value={mode} onChange={setMode} options={[["sector", "자산별"], ["holding", "종목별"]]} />}>
+      {sectorView ? (
+        <div style={{ marginBottom: 12 }}>
+          <button className="ph-btn" onClick={() => setDetail((d) => !d)} style={{ ...secondaryBtn(th), padding: "7px 14px", fontSize: 12.5 }}>
+            {detail ? "◂ 자산군으로 보기" : "세부내용 보기 ▸"}
+          </button>
+        </div>
+      ) : (
         <div style={{ marginBottom: 12 }}>
           <Segmented th={th} value={basis} onChange={setBasis} options={[["value", "평가액 기준"], ["cost", "원금 기준"]]} />
         </div>
