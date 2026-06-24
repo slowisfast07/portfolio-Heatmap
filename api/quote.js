@@ -44,6 +44,12 @@ function parseQuote(j, sym) {
   const regular = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
   const isKR = /\.(KS|KQ)$/i.test(sym || "");
+  // Index symbols (^GSPC, ^NDX, ^KS11, …) have NO extended-hours trading, so the
+  // post/overnight baseline logic below would compare the regular close against itself
+  // and report chg=0 (which renders as an invisible zero-height bar in the benchmark
+  // chart). For an index "오늘 변동률" is always the regular-session move vs the prior
+  // close, regardless of which session the clock says we're in.
+  const isIndex = /^\^/.test(sym || "");
   const state = isKR ? krSessionFromKST() : usSessionFromET(); // computed locally, not from Yahoo
 
   // We do NOT rely on meta.postMarketPrice/preMarketPrice — the /v8/finance/chart
@@ -54,10 +60,12 @@ function parseQuote(j, sym) {
   const closes = result?.indicators?.quote?.[0]?.close || [];
   let latest = null;
   for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
-  const price = latest != null ? latest : regular;
+  const price = isIndex ? regular : (latest != null ? latest : regular);
 
   let base, mkt;
-  if (isKR) {
+  if (isIndex) {
+    base = prevClose; mkt = "지수";
+  } else if (isKR) {
     // IMPORTANT: for POST/POSTPOST we deliberately use `prevClose`, not `regular`.
     // Yahoo's `regularMarketPrice` is NOT a frozen end-of-regular-session close — it keeps
     // ticking live through the NXT 장후 시간외 session, since this is the same field Yahoo

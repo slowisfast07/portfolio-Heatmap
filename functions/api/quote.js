@@ -33,15 +33,21 @@ function parseQuote(j, sym) {
   const regular = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
   const isKR = /\.(KS|KQ)$/i.test(sym || "");
+  // Indices (^GSPC, ^NDX, ^KS11, …) have no extended-hours trading; "오늘 변동률" is always
+  // the regular-session move vs the prior close. Otherwise the post/overnight baseline below
+  // compares the regular close against itself -> chg=0 -> invisible bar in the benchmark chart.
+  const isIndex = /^\^/.test(sym || "");
   const state = isKR ? krSessionFromKST() : usSessionFromET();
 
   const closes = result?.indicators?.quote?.[0]?.close || [];
   let latest = null;
   for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
-  const price = latest != null ? latest : regular;
+  const price = isIndex ? regular : (latest != null ? latest : regular);
 
   let base, mkt;
-  if (isKR) {
+  if (isIndex) {
+    base = prevClose; mkt = "지수";
+  } else if (isKR) {
     if (state === "PRE") { base = prevClose; mkt = "장전 시간외"; }
     else if (state === "POST") { base = regular; mkt = "장후 시간외(종가)"; }
     else if (state === "POSTPOST") { base = regular; mkt = "장후 시간외(단일가)"; }

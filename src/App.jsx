@@ -71,28 +71,31 @@ async function submitFeedback(payload) {
 
 
 /* ------------------------------------------------------------------ *
- *  THEME  (Polymarket-inspired: slate #15191d + blue #2d9cdb)         *
+ *  THEME  (Binance design system — yellow #fcd535 on near-black)       *
+ *  Dark = marketing/dashboard floor (canvas-dark #0b0e11)             *
+ *  Light = transactional surfaces. Yellow CTA + green/red price       *
+ *  semantics are shared across both modes.                            *
  * ------------------------------------------------------------------ */
 const THEMES = {
   dark: {
-    name: "dark", bg: "#0f1318", panel: "#181d24", panelAlt: "#222933", border: "#272e38",
-    borderHover: "#3a4350", text: "#eef1f4", textDim: "#9aa3ad", textFaint: "#69727d",
-    accent: "#2d9cdb", accentGlow: "rgba(45,156,219,.38)",
-    inputBg: "#12161c", heatPos: "#21a85a", heatNeg: "#e5484d", heatNeu: "#2b323c",
-    rowHover: "#232a34", band: "#13171d",
-    posBg: "rgba(33,168,90,.16)", negBg: "rgba(229,72,77,.16)",
-    cardShadow: "0 8px 28px rgba(0,0,0,.38)",
-    heroGlow: "linear-gradient(180deg, rgba(155,93,229,.12), rgba(45,212,191,.05) 42%, transparent 78%)",
+    name: "dark", bg: "#0b0e11", panel: "#1e2329", panelAlt: "#2b3139", border: "#2b3139",
+    borderHover: "#474d57", text: "#eaecef", textDim: "#929aa5", textFaint: "#707a8a",
+    accent: "#fcd535", accentActive: "#f0b90b", onAccent: "#181a20", accentGlow: "rgba(252,213,53,.32)",
+    inputBg: "#1e2329", heatPos: "#0ecb81", heatNeg: "#f6465d", heatNeu: "#2b3139",
+    rowHover: "#2b3139", band: "#181a20",
+    posBg: "rgba(14,203,129,.16)", negBg: "rgba(246,70,93,.16)",
+    cardShadow: "0 6px 20px rgba(0,0,0,.36)",
+    heroGlow: "linear-gradient(180deg, rgba(252,213,53,.10), transparent 72%)",
   },
   light: {
-    name: "light", bg: "#f4f6f9", panel: "#ffffff", panelAlt: "#eef1f5", border: "#e2e6ec",
-    borderHover: "#cdd5df", text: "#15191d", textDim: "#5b646d", textFaint: "#97a0aa",
-    accent: "#1d83c6", accentGlow: "rgba(29,131,198,.28)",
-    inputBg: "#ffffff", heatPos: "#1c9d57", heatNeg: "#d83a40", heatNeu: "#dde2e8",
-    rowHover: "#eef2f7", band: "#eef1f5",
-    posBg: "rgba(28,157,87,.13)", negBg: "rgba(216,58,64,.12)",
-    cardShadow: "0 8px 24px rgba(15,25,40,.10)",
-    heroGlow: "linear-gradient(180deg, rgba(155,93,229,.08), rgba(45,156,219,.05) 42%, transparent 78%)",
+    name: "light", bg: "#fafafa", panel: "#ffffff", panelAlt: "#f5f5f5", border: "#eaecef",
+    borderHover: "#cdd1d6", text: "#181a20", textDim: "#707a8a", textFaint: "#929aa5",
+    accent: "#fcd535", accentActive: "#f0b90b", onAccent: "#181a20", accentGlow: "rgba(252,213,53,.30)",
+    inputBg: "#ffffff", heatPos: "#0ecb81", heatNeg: "#f6465d", heatNeu: "#eaecef",
+    rowHover: "#f5f5f5", band: "#fafafa",
+    posBg: "rgba(14,203,129,.13)", negBg: "rgba(246,70,93,.12)",
+    cardShadow: "0 6px 20px rgba(24,26,32,.10)",
+    heroGlow: "linear-gradient(180deg, rgba(252,213,53,.10), transparent 72%)",
   },
 };
 
@@ -334,16 +337,22 @@ function parseYahooChartQuote(j, sym) {
   const regular = meta.regularMarketPrice;
   const prevClose = meta.chartPreviousClose ?? meta.previousClose ?? regular;
   const isKR = /\.(KS|KQ)$/i.test(sym || "");
+  // Indices (^GSPC, ^NDX, ^KS11, …) have no extended-hours trading, so "오늘 변동률" is always
+  // the regular-session move vs the prior close. Without this, the post/overnight branch below
+  // compares the regular close against itself -> chg=0 -> invisible zero-height benchmark bar.
+  const isIndex = /^\^/.test(sym || "");
   const state = isKR ? krMarketSession().key : usMarketSession().key; // PRE | REGULAR | POST | POSTPOST | CLOSED — our own clock, not Yahoo's
 
   const closes = result?.indicators?.quote?.[0]?.close || [];
   let latest = null;
   for (let i = closes.length - 1; i >= 0; i--) { if (closes[i] != null) { latest = closes[i]; break; } }
-  const price = latest != null ? latest : regular;
+  const price = isIndex ? regular : (latest != null ? latest : regular);
 
   // baseline to diff against, and the Korean label, depend on which session we're in
   let base, mkt;
-  if (isKR) {
+  if (isIndex) {
+    base = prevClose; mkt = "지수";
+  } else if (isKR) {
     // IMPORTANT: use `prevClose`, not `regular`, for POST/POSTPOST — Yahoo's regularMarketPrice
     // keeps ticking live through the NXT 장후 시간외 session rather than staying frozen at the
     // regular-session close, so using it as `base` makes the % swing wildly (even flip sign).
@@ -1102,8 +1111,8 @@ export default function App() {
   return (
     <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: "Inter, system-ui, sans-serif" }}>
       <style>{`
-        .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
-        input,select{outline:none;font-family:inherit;} input:focus,select:focus{border-color:${th.accent}!important;}
+        .num{font-family:'JetBrains Mono','Inter',ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;font-feature-settings:"tnum";letter-spacing:-0.01em;}
+        input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:#3b82f6!important;box-shadow:0 0 0 2px rgba(59,130,246,.5);}
         .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
         .ph-primary:hover{box-shadow:0 4px 16px ${th.accentGlow};}
         .ph-card{transition:box-shadow .2s, border-color .2s, transform .2s;}
@@ -1126,12 +1135,12 @@ export default function App() {
       {/* HEADER */}
       <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "16px 22px", borderBottom: `1px solid ${th.border}`, background: th.bg, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 9, background: "linear-gradient(135deg,#2d9cdb,#9b5de5)", display: "grid", placeItems: "center", fontWeight: 800, fontSize: 17, color: "#fff", boxShadow: "0 2px 10px rgba(45,156,219,.4)" }}>P</div>
-          <div style={{ fontWeight: 800, fontSize: 16, letterSpacing: -0.3 }}>{CONFIG.productName}</div>
+          <div style={{ width: 32, height: 32, borderRadius: 8, background: th.accent, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 17, color: th.onAccent }}>P</div>
+          <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: -0.3 }}>{CONFIG.productName}</div>
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ textAlign: "right", marginRight: 6 }}>
-          <div className="num" style={{ fontSize: 22, fontWeight: 800, letterSpacing: -0.5 }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
+          <div className="num" style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 3 }}>
             <DeltaPill th={th} label="오늘" v={dayChange} />
             <DeltaPill th={th} label="수익" v={totalReturn} />
@@ -1287,13 +1296,13 @@ function CashCard({ th, cash, displayCur, conv, cashValue, cashPct, investedValu
       titleExtra={<Wallet size={15} color={th.textDim} />}
       right={<button className="ph-btn ph-primary" onClick={onAdd} style={{ ...primaryBtn(th), padding: "6px 10px", fontSize: 12 }}><Plus size={14} /> 현금</button>}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-        <span className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: -0.6 }}>{fmt(cashPct, 1)}%</span>
+        <span className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: -0.6 }}>{fmt(cashPct, 1)}%</span>
         <span style={{ fontSize: 12, color: th.textDim }}>현금 / 총자산</span>
       </div>
       <div className="num" style={{ fontSize: 13, color: th.textDim, marginBottom: 12 }}>{fmtMoney(cashValue, displayCur)}</div>
 
       {/* invested vs cash bar */}
-      <div style={{ display: "flex", height: 9, borderRadius: 5, overflow: "hidden", background: th.inputBg, marginBottom: 6 }}>
+      <div style={{ display: "flex", height: 9, borderRadius: 4, overflow: "hidden", background: th.inputBg, marginBottom: 6 }}>
         <div style={{ width: `${investedPct}%`, background: th.accent }} />
         <div style={{ width: `${cashPct}%`, background: CASH_COLOR }} />
       </div>
@@ -1317,7 +1326,7 @@ function CashCard({ th, cash, displayCur, conv, cashValue, cashPct, investedValu
     </Panel>
   );
 }
-const Dot = ({ c }) => <span style={{ width: 8, height: 8, borderRadius: 3, background: c, display: "inline-block" }} />;
+const Dot = ({ c }) => <span style={{ width: 8, height: 8, borderRadius: 2, background: c, display: "inline-block" }} />;
 
 /* ------------------------------------------------------------------ *
  *  HEATMAP CONTROLS                                                   *
@@ -1367,10 +1376,10 @@ function Treemap({ leaves, th, cap, showPct, labelMode, onTile }) {
     return r;
   }, [leaves, w, H]);
 
-  if (!root) return <div ref={ref} style={{ height: H, display: "grid", placeItems: "center", color: th.textFaint, border: `1px dashed ${th.border}`, borderRadius: 10, fontSize: 13 }}>종목을 추가하면 히트맵이 표시됩니다</div>;
+  if (!root) return <div ref={ref} style={{ height: H, display: "grid", placeItems: "center", color: th.textFaint, border: `1px dashed ${th.border}`, borderRadius: 8, fontSize: 13 }}>종목을 추가하면 히트맵이 표시됩니다</div>;
 
   return (
-    <div ref={ref} style={{ position: "relative", width: "100%", height: H, borderRadius: 10, overflow: "hidden", background: th.band }}>
+    <div ref={ref} style={{ position: "relative", width: "100%", height: H, borderRadius: 8, overflow: "hidden", background: th.band }}>
       {root.children.map((s, i) => (
         <div key={"sec" + i} style={{ position: "absolute", left: s.x0, top: s.y0, width: s.x1 - s.x0, height: 21, fontSize: 9.5, fontWeight: 700, letterSpacing: 0.5, color: th.textDim, padding: "5px 7px 0", textTransform: "uppercase", overflow: "hidden", whiteSpace: "nowrap", pointerEvents: "none" }}>{s.data.sector}</div>
       ))}
@@ -1405,7 +1414,7 @@ function HeatLegend({ th, cap, mode }) {
       <span style={{ fontSize: 10.5, color: th.textFaint }}>{mode === "return" ? "수익률" : "일간"}</span>
       <div style={{ display: "flex", gap: 3 }}>
         {stops.map((s, i) => (
-          <div key={i} className="num" style={{ background: heatColor(s, th, cap), color: Math.abs(s) > cap / 2 ? "#fff" : th.text, fontSize: 10.5, fontWeight: 600, padding: "3px 8px", minWidth: 44, textAlign: "center", borderRadius: 5 }}>{s > 0 ? "+" : ""}{fmt(s, s % 1 === 0 ? 0 : 1)}%</div>
+          <div key={i} className="num" style={{ background: heatColor(s, th, cap), color: Math.abs(s) > cap / 2 ? "#fff" : th.text, fontSize: 10.5, fontWeight: 600, padding: "3px 8px", minWidth: 44, textAlign: "center", borderRadius: 4 }}>{s > 0 ? "+" : ""}{fmt(s, s % 1 === 0 ? 0 : 1)}%</div>
         ))}
       </div>
     </div>
@@ -1431,7 +1440,7 @@ function Donut({ data, th, colorMap }) {
         </ResponsiveContainer>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
           <div style={{ textAlign: "center" }}>
-            <div className="num" style={{ fontSize: 26, fontWeight: 800, letterSpacing: -0.5, color: col(top.sector) }}>{fmt(top.pct, 1)}%</div>
+            <div className="num" style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: col(top.sector) }}>{fmt(top.pct, 1)}%</div>
             <div style={{ fontSize: 11, color: th.textDim, maxWidth: 90, lineHeight: 1.2 }}>{top.sector}</div>
           </div>
         </div>
@@ -1526,7 +1535,7 @@ function DeltaPill({ th, label, v }) {
 }
 function Panel({ th, title, sub, titleExtra, right, glow, children }) {
   return (
-    <div className="ph-card" style={{ position: "relative", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 18, overflow: "hidden" }}>
+    <div className="ph-card" style={{ position: "relative", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 18, overflow: "hidden" }}>
       {glow && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 90, background: th.heroGlow, pointerEvents: "none" }} />}
       <div style={{ position: "relative", display: "flex", alignItems: "center", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -1545,15 +1554,15 @@ function Segmented({ th, value, onChange, options, small }) {
       {options.map(([val, label]) => {
         const on = value === val;
         return (
-          <button key={val} className="ph-btn" onClick={() => onChange(val)} style={{ border: "none", borderRadius: 999, padding: small ? "4px 10px" : "5px 13px", fontSize: small ? 11.5 : 12.5, fontWeight: 700, background: on ? th.accent : "transparent", color: on ? "#fff" : th.textDim, cursor: "pointer", transition: "all .15s", boxShadow: on ? "0 1px 6px rgba(0,0,0,.28)" : "none" }}>{label}</button>
+          <button key={val} className="ph-btn" onClick={() => onChange(val)} style={{ border: "none", borderRadius: 6, padding: small ? "4px 10px" : "5px 13px", fontSize: small ? 11.5 : 12.5, fontWeight: 600, background: on ? th.accent : "transparent", color: on ? th.onAccent : th.textDim, cursor: "pointer", transition: "all .15s", boxShadow: "none" }}>{label}</button>
         );
       })}
     </div>
   );
 }
-const iconBtn = (th) => ({ display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 10, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, cursor: "pointer" });
-const primaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.accent, color: "#fff", border: "none", padding: "8px 13px", borderRadius: 10, fontWeight: 700, fontSize: 12.5, cursor: "pointer" });
-const secondaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.panelAlt, color: th.text, border: `1px solid ${th.border}`, padding: "8px 13px", borderRadius: 10, fontWeight: 700, fontSize: 12.5, cursor: "pointer" });
+const iconBtn = (th) => ({ display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 8, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, cursor: "pointer" });
+const primaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.accent, color: th.onAccent, border: "none", padding: "9px 16px", borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: "pointer" });
+const secondaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.panelAlt, color: th.text, border: `1px solid ${th.border}`, padding: "9px 16px", borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: "pointer" });
 const inpStyle = (th, w) => ({ width: w || undefined, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: "6px 9px", fontSize: 12.5 });
 const selStyle = (th, w) => ({ width: w, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: "6px 7px", fontSize: 12, cursor: "pointer" });
 
@@ -1616,9 +1625,9 @@ function ThemeIdeas({ th, ideas, onSelect, selected }) {
           const grad = i % 4 === 3, on = selected && selected.ticker === it.ticker;
           return (
             <button key={i} className="ph-btn" onClick={() => onSelect(it)}
-              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 156, padding: "12px 18px", borderRadius: 999, border: `1px solid ${on ? th.accent : grad ? "transparent" : th.border}`, background: grad ? "linear-gradient(100deg,#7c4dff,#2d9cdb)" : th.panelAlt, color: grad ? "#fff" : th.text, cursor: "pointer", whiteSpace: "nowrap" }}>
+              style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2, minWidth: 156, padding: "12px 18px", borderRadius: 999, border: `1px solid ${on ? th.accent : grad ? "transparent" : th.border}`, background: grad ? th.accent : th.panelAlt, color: grad ? th.onAccent : th.text, cursor: "pointer", whiteSpace: "nowrap" }}>
               <span style={{ fontSize: 10.5, opacity: 0.78, fontWeight: 600 }}>{it.kind === "diversify" ? "다양화 · " : "+ 추가 · "}{it.theme}</span>
-              <span style={{ fontWeight: 800, fontSize: 14 }}>{(it.ticker || "").replace(".KS", "").replace(".KQ", "")}</span>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{(it.ticker || "").replace(".KS", "").replace(".KQ", "")}</span>
             </button>
           );
         })}
@@ -1628,7 +1637,7 @@ function ThemeIdeas({ th, ideas, onSelect, selected }) {
 }
 
 function LinkBtn({ th, href, children, color }) {
-  return <a href={href} target="_blank" rel="noopener noreferrer" className="ph-btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", fontSize: 12.5, fontWeight: 700, padding: "8px 13px", borderRadius: 9, border: `1px solid ${th.border}`, background: th.panelAlt, color: color || th.text }}>{children}</a>;
+  return <a href={href} target="_blank" rel="noopener noreferrer" className="ph-btn" style={{ display: "inline-flex", alignItems: "center", gap: 6, textDecoration: "none", fontSize: 12.5, fontWeight: 700, padding: "8px 13px", borderRadius: 8, border: `1px solid ${th.border}`, background: th.panelAlt, color: color || th.text }}>{children}</a>;
 }
 
 function IdeaDetail({ th, idea, onClose, onAdd }) {
@@ -1641,9 +1650,9 @@ function IdeaDetail({ th, idea, onClose, onAdd }) {
     return () => { live = false; };
   }, [sym]);
   return (
-    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, padding: 18 }}>
+    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-        <span style={{ fontSize: 17, fontWeight: 800 }}>{bareCode(sym)}</span>
+        <span style={{ fontSize: 17, fontWeight: 700 }}>{bareCode(sym)}</span>
         <span style={{ fontSize: 12, color: th.textDim, background: th.panelAlt, padding: "2px 9px", borderRadius: 999 }}>{idea.theme}</span>
         <div style={{ flex: 1 }} />
         <button className="ph-btn ph-primary" onClick={() => onAdd(sym)} style={primaryBtn(th)}><Plus size={14} /> 내 포트폴리오에 추가</button>
@@ -1653,8 +1662,8 @@ function IdeaDetail({ th, idea, onClose, onAdd }) {
         {loading ? <span style={{ color: th.textFaint }}>설명을 불러오는 중…</span> : (desc || "이 종목에 대한 간단한 설명을 불러오지 못했어요. 아래 링크에서 자세히 확인하세요. (배포본은 AI 설명에 API 키가 필요합니다)")}
       </p>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <LinkBtn th={th} href={yahooUrl(sym)} color="#7c4dff">Yahoo Finance ↗</LinkBtn>
-        <LinkBtn th={th} href={tossUrl(sym)} color="#2d9cdb">토스증권 ↗</LinkBtn>
+        <LinkBtn th={th} href={yahooUrl(sym)} color={th.accent}>Yahoo Finance ↗</LinkBtn>
+        <LinkBtn th={th} href={tossUrl(sym)} color={th.accent}>토스증권 ↗</LinkBtn>
         <LinkBtn th={th} href={redditUrl(sym)} color="#fc6e51">Reddit ↗</LinkBtn>
       </div>
     </div>
@@ -1663,13 +1672,13 @@ function IdeaDetail({ th, idea, onClose, onAdd }) {
 
 function WhaleCard({ th, w, onSelect, on }) {
   return (
-    <button className="ph-card" onClick={() => onSelect(w)} style={{ width: 234, padding: 16, borderRadius: 14, border: `1px solid ${on ? th.accent : th.border}`, background: th.panel, cursor: "pointer", textAlign: "left", color: th.text }}>
+    <button className="ph-card" onClick={() => onSelect(w)} style={{ width: 234, padding: 16, borderRadius: 12, border: `1px solid ${on ? th.accent : th.border}`, background: th.panel, cursor: "pointer", textAlign: "left", color: th.text }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${w.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 16, color: "#fff", flexShrink: 0 }}>{w.name.slice(0, 1)}</div>
+        <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${w.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 16, color: "#fff", flexShrink: 0 }}>{w.name.slice(0, 1)}</div>
         <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap", color: th.text }}>{w.name}</div><div style={{ fontSize: 11, color: th.textDim, whiteSpace: "nowrap" }}>{w.fund}</div></div>
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-        {w.holdings.slice(0, 4).map((x) => (<span key={x.t} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 7, background: th.panelAlt, color: th.textDim }}>{x.t}</span>))}
+        {w.holdings.slice(0, 4).map((x) => (<span key={x.t} style={{ fontSize: 11, fontWeight: 700, padding: "3px 8px", borderRadius: 6, background: th.panelAlt, color: th.textDim }}>{x.t}</span>))}
       </div>
     </button>
   );
@@ -1690,10 +1699,10 @@ function WhaleDetail({ th, whale, onClose, onAdd }) {
   const cmap = {}; let pi = 0;
   data.forEach((d) => { cmap[d.sector] = d.sector === "기타" ? CASH_COLOR : PALETTE[pi++ % PALETTE.length]; });
   return (
-    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 14, padding: 18 }}>
+    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-        <div style={{ width: 38, height: 38, borderRadius: "50%", background: `linear-gradient(135deg,${whale.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 800, fontSize: 15, color: "#fff" }}>{whale.name.slice(0, 1)}</div>
-        <div><div style={{ fontWeight: 800, fontSize: 15 }}>{whale.name}</div><div style={{ fontSize: 11.5, color: th.textDim }}>{whale.fund} · {whale.holdings.length - 1}개 주요 종목</div></div>
+        <div style={{ width: 38, height: 38, borderRadius: "50%", background: `linear-gradient(135deg,${whale.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 15, color: "#fff" }}>{whale.name.slice(0, 1)}</div>
+        <div><div style={{ fontWeight: 700, fontSize: 15 }}>{whale.name}</div><div style={{ fontSize: 11.5, color: th.textDim }}>{whale.fund} · {whale.holdings.length - 1}개 주요 종목</div></div>
         <div style={{ flex: 1 }} />
         <button className="ph-btn" onClick={onClose} style={iconBtn(th)}>✕</button>
       </div>
@@ -1717,7 +1726,7 @@ function WhaleDetail({ th, whale, onClose, onAdd }) {
         </div>
       </div>
       <div style={{ marginTop: 12, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <LinkBtn th={th} href={edgarUrl(whale.q)} color="#2d9cdb">실제 13F 공시 (SEC EDGAR) ↗</LinkBtn>
+        <LinkBtn th={th} href={edgarUrl(whale.q)} color={th.accent}>실제 13F 공시 (SEC EDGAR) ↗</LinkBtn>
         <span style={{ fontSize: 11, color: th.textFaint }}>※ 종목·비중은 참고용 예시이며 최신 공시와 다를 수 있어요.</span>
       </div>
     </div>
@@ -1743,11 +1752,11 @@ function GoalCard({ th, goal, setGoal, totalAssets, displayCur, conv }) {
       {goalInDisplay ? (
         <>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-            <span className="num" style={{ fontSize: 30, fontWeight: 800, letterSpacing: -0.6, color: pct >= 100 ? th.heatPos : th.accent }}>{fmt(pct, 1)}%</span>
+            <span className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: -0.6, color: pct >= 100 ? th.heatPos : th.accent }}>{fmt(pct, 1)}%</span>
             <span style={{ fontSize: 12, color: th.textDim }}>달성</span>
           </div>
           <div style={{ height: 10, borderRadius: 6, overflow: "hidden", background: th.inputBg, marginBottom: 8 }}>
-            <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? th.heatPos : `linear-gradient(90deg,#2d9cdb,#7c4dff)`, transition: "width .4s" }} />
+            <div style={{ width: `${pct}%`, height: "100%", background: pct >= 100 ? th.heatPos : th.accent, transition: "width .4s" }} />
           </div>
           <div className="num" style={{ fontSize: 12.5, color: th.textDim }}>
             {fmtMoney(totalAssets, displayCur)} / {fmtMoney(goalInDisplay, displayCur)}
@@ -2004,7 +2013,7 @@ function TopNav({ th, onHelp }) {
     <div style={{ position: "sticky", top: 63, zIndex: 15, background: th.bg, borderBottom: `1px solid ${th.border}` }}>
       <div style={{ maxWidth: "100%", margin: "0 auto", padding: "0 24px", display: "flex", gap: 2, overflowX: "auto", alignItems: "center" }}>
         {NAV.map(([id, label]) => (
-          <button key={id} className="navbtn" onClick={() => go(id)} style={{ flexShrink: 0, background: "transparent", border: "none", color: th.textDim, fontWeight: 700, fontSize: 13, padding: "11px 13px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{label}</button>
+          <button key={id} className="navbtn" onClick={() => go(id)} style={{ flexShrink: 0, background: "transparent", border: "none", color: th.textDim, fontWeight: 700, fontSize: 13, padding: "11px 13px", borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit" }}>{label}</button>
         ))}
         <div style={{ flex: 1, minWidth: 8 }} />
         {onHelp && (
@@ -2059,7 +2068,7 @@ function TickerInput({ th, value, placeholder, width, type, onText, onPick }) {
         }}
         style={inpStyle(th, width)} />
       {open && cands.length > 0 && rect && (
-        <div style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, zIndex: 60, minWidth: Math.max(220, rect.width), background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 9, boxShadow: th.cardShadow, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
+        <div style={{ position: "fixed", top: rect.bottom + 4, left: rect.left, zIndex: 60, minWidth: Math.max(220, rect.width), background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, boxShadow: th.cardShadow, overflow: "hidden", maxHeight: 260, overflowY: "auto" }}>
           {cands.map((c, i) => (
             <div key={c.symbol + i} onMouseDown={(e) => { e.preventDefault(); pick(c.symbol); }}
               style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 11px", cursor: "pointer", background: i === hi ? th.rowHover : "transparent" }}>
@@ -2105,9 +2114,9 @@ function ChartTip({ active, payload, cur, intraday, th }) {
     ? `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
     : d.toISOString().slice(0, 10);
   return (
-    <div style={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 9, padding: "7px 11px", fontSize: 12, boxShadow: th.cardShadow }}>
+    <div style={{ background: th.panelAlt, border: `1px solid ${th.border}`, borderRadius: 8, padding: "7px 11px", fontSize: 12, boxShadow: th.cardShadow }}>
       <div style={{ color: th.textDim, marginBottom: 3 }}>{label}</div>
-      <div className="num" style={{ fontWeight: 800, fontSize: 14, color: th.text }}>{cur}{fmt(p.v, 2)}</div>
+      <div className="num" style={{ fontWeight: 700, fontSize: 14, color: th.text }}>{cur}{fmt(p.v, 2)}</div>
     </div>
   );
 }
@@ -2197,9 +2206,9 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
   const sym = info.key || info.ticker;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 80, display: "grid", placeItems: "center", padding: 18 }}>
-      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(640px,100%)", maxHeight: "92vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(640px,100%)", maxHeight: "92vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 20, boxShadow: th.cardShadow }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
-          <span style={{ fontSize: 19, fontWeight: 800 }}>{bareCode(info.ticker)}</span>
+          <span style={{ fontSize: 19, fontWeight: 700 }}>{bareCode(info.ticker)}</span>
           <span style={{ fontSize: 13, color: th.textDim }}>{info.name || ""}</span>
           <div style={{ flex: 1 }} />
           <button className="ph-btn" onClick={onClose} style={iconBtn(th)}>✕</button>
@@ -2214,8 +2223,8 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
         )}
         <StockChart th={th} sym={sym} cur={cur} initialData={initialData} />
         <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
-          <LinkBtn th={th} href={yahooUrl(info.ticker)} color="#7c4dff">Yahoo Finance ↗</LinkBtn>
-          <LinkBtn th={th} href={tossUrl(info.ticker)} color="#2d9cdb">토스증권 ↗</LinkBtn>
+          <LinkBtn th={th} href={yahooUrl(info.ticker)} color={th.accent}>Yahoo Finance ↗</LinkBtn>
+          <LinkBtn th={th} href={tossUrl(info.ticker)} color={th.accent}>토스증권 ↗</LinkBtn>
           <LinkBtn th={th} href={redditUrl(info.ticker)} color="#fc6e51">Reddit ↗</LinkBtn>
         </div>
       </div>
@@ -2273,10 +2282,10 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
  * ------------------------------------------------------------------ */
 function WelcomeBanner({ th, onSample, onAdd, onClose }) {
   return (
-    <div style={{ position: "relative", borderRadius: 16, padding: "22px 22px", border: `1px solid ${th.border}`, background: `linear-gradient(120deg, ${th.panel}, ${th.panelAlt})`, overflow: "hidden" }}>
-      <div style={{ position: "absolute", right: -40, top: -40, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(45,156,219,.25), transparent 70%)" }} />
+    <div style={{ position: "relative", borderRadius: 12, padding: "22px 22px", border: `1px solid ${th.border}`, background: `linear-gradient(120deg, ${th.panel}, ${th.panelAlt})`, overflow: "hidden" }}>
+      <div style={{ position: "absolute", right: -40, top: -40, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(252,213,53,.16), transparent 70%)" }} />
       <button className="ph-btn" onClick={onClose} style={{ ...iconBtn(th), position: "absolute", right: 12, top: 12 }}>✕</button>
-      <div style={{ fontSize: 21, fontWeight: 800, letterSpacing: -0.4, marginBottom: 6 }}>내 모든 자산을 한 화면에 👋</div>
+      <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: -0.4, marginBottom: 6 }}>내 모든 자산을 한 화면에 👋</div>
       <p style={{ fontSize: 13.5, color: th.textDim, lineHeight: 1.7, maxWidth: 620, margin: "0 0 16px" }}>
         미국·한국 주식과 코인을 넣으면 <b style={{ color: th.text }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
         티커만 입력하면 이름·섹터·시세가 알아서 채워집니다. 처음이라면 예시로 먼저 둘러보세요.
@@ -2300,11 +2309,10 @@ function FeedbackCard({ onOpen }) {
         maxWidth: 480,
         boxSizing: "border-box",
         padding: "44px 32px 32px",
-        borderRadius: 24,
-        border: "1px solid rgba(255,255,255,.08)",
-        background:
-          "radial-gradient(120% 90% at 50% 0%, rgba(139,92,246,.22) 0%, rgba(139,92,246,.06) 38%, rgba(13,15,20,0) 70%), linear-gradient(180deg, #14161c 0%, #0d0f14 100%)",
-        boxShadow: "0 24px 60px rgba(0,0,0,.45)",
+        borderRadius: 12,
+        border: "1px solid #2b3139",
+        background: "#1e2329",
+        boxShadow: "0 6px 20px rgba(0,0,0,.36)",
         textAlign: "center",
         overflow: "hidden",
       }}
@@ -2317,43 +2325,42 @@ function FeedbackCard({ onOpen }) {
           right: 18,
           fontSize: 13,
           fontWeight: 600,
-          color: "#c4b5fd",
-          background: "rgba(139,92,246,.18)",
-          border: "1px solid rgba(139,92,246,.35)",
+          color: "#fcd535",
+          background: "rgba(252,213,53,.14)",
+          border: "1px solid rgba(252,213,53,.38)",
           padding: "5px 14px",
-          borderRadius: 999,
+          borderRadius: 9999,
         }}
       >
         베타
       </span>
 
-      {/* gradient logo icon */}
+      {/* logo icon */}
       <div
         style={{
           width: 72,
           height: 72,
           margin: "0 auto 22px",
-          borderRadius: 18,
+          borderRadius: 12,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "linear-gradient(135deg, #34d399 0%, #8b5cf6 55%, #a855f7 100%)",
-          boxShadow: "0 10px 30px rgba(139,92,246,.5)",
+          background: "#fcd535",
         }}
       >
         <svg width="38" height="38" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
-            stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            stroke="#181a20" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
 
       {/* title */}
-      <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", letterSpacing: "-0.02em", marginBottom: 12 }}>
+      <div style={{ fontSize: 28, fontWeight: 700, color: "#eaecef", letterSpacing: "-0.02em", marginBottom: 12 }}>
         의견 보내기
       </div>
 
       {/* subtitle */}
-      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#9aa3af", maxWidth: 340, margin: "0 auto 28px" }}>
+      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#929aa5", maxWidth: 340, margin: "0 auto 28px" }}>
         쓰면서 불편한 점이나 더 있으면 좋겠는 기능을 알려주시면 빠르게 반영할게요
       </div>
 
@@ -2364,16 +2371,14 @@ function FeedbackCard({ onOpen }) {
         onMouseLeave={() => setHover(false)}
         style={{
           width: "100%",
-          padding: "16px 24px",
-          borderRadius: 999,
+          padding: "15px 32px",
+          borderRadius: 9999,
           border: "none",
           cursor: "pointer",
-          fontSize: 17,
-          fontWeight: 700,
-          color: "#fff",
-          background: "linear-gradient(135deg, #a855f7 0%, #8b5cf6 100%)",
-          boxShadow: hover ? "0 12px 32px rgba(139,92,246,.55)" : "0 8px 22px rgba(139,92,246,.4)",
-          transform: hover ? "translateY(-1px)" : "none",
+          fontSize: 16,
+          fontWeight: 600,
+          color: "#181a20",
+          background: hover ? "#f0b90b" : "#fcd535",
           transition: "all .18s ease",
         }}
       >
@@ -2402,9 +2407,9 @@ function FeedbackModal({ th, onClose }) {
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
-      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(440px,100%)", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(440px,100%)", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 20, boxShadow: th.cardShadow }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
-          <span style={{ fontSize: 16, fontWeight: 800 }}>의견 보내기</span>
+          <span style={{ fontSize: 16, fontWeight: 700 }}>의견 보내기</span>
           <div style={{ flex: 1 }} />
           <button className="ph-btn" onClick={onClose} style={iconBtn(th)}>✕</button>
         </div>
@@ -2421,9 +2426,9 @@ function FeedbackModal({ th, onClose }) {
               필요한 기능, 불편한 점, 무엇이든 적어주세요. 이메일을 남기면 업데이트·정식 출시 소식을 알려드려요(선택).
             </p>
             <textarea value={msg} onChange={(e) => setMsg(e.target.value)} placeholder="예: 배당 캘린더가 있으면 좋겠어요 / 표가 모바일에서 좁아요 / 이런 기능 원해요…"
-              style={{ width: "100%", minHeight: 110, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 10, padding: 11, fontSize: 13, fontFamily: "inherit", resize: "vertical", marginBottom: 10 }} />
+              style={{ width: "100%", minHeight: 110, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: 11, fontSize: 13, fontFamily: "inherit", resize: "vertical", marginBottom: 10 }} />
             <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="이메일 (선택 · 출시 알림 받기)" type="email"
-              style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 10, padding: "10px 11px", fontSize: 13, marginBottom: 14 }} />
+              style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: "10px 11px", fontSize: 13, marginBottom: 14 }} />
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
               <button className="ph-btn" onClick={onClose} style={secondaryBtn(th)}>취소</button>
               <button className="ph-btn ph-primary" onClick={send} disabled={state === "sending"} style={{ ...primaryBtn(th), opacity: state === "sending" ? 0.6 : 1 }}>{state === "sending" ? "보내는 중…" : "보내기"}</button>
@@ -2476,7 +2481,7 @@ function FxCard({ th, fx, displayCur }) {
   const row = (label, v, strong) => (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 0", borderTop: strong ? `1px solid ${th.border}` : "none" }}>
       <span style={{ fontSize: strong ? 13 : 12.5, fontWeight: strong ? 800 : 600, color: strong ? th.text : th.textDim }}>{label}</span>
-      <span className="num" style={{ fontSize: strong ? 14.5 : 13, fontWeight: 800, color: v == null ? th.textFaint : v >= 0 ? th.heatPos : th.heatNeg }}>{v == null ? "—" : `${v >= 0 ? "+" : ""}${fmtMoney(v, displayCur)}`}</span>
+      <span className="num" style={{ fontSize: strong ? 14.5 : 13, fontWeight: 700, color: v == null ? th.textFaint : v >= 0 ? th.heatPos : th.heatNeg }}>{v == null ? "—" : `${v >= 0 ? "+" : ""}${fmtMoney(v, displayCur)}`}</span>
     </div>
   );
   return (
@@ -2510,15 +2515,15 @@ function DividendCard({ th, dv, displayCur, hideAmt }) {
           <div style={{ display: "flex", gap: 18, marginBottom: 14 }}>
             <div>
               <div style={{ fontSize: 11, color: th.textFaint, marginBottom: 3 }}>연간 예상 배당</div>
-              <div className="num" style={{ fontSize: 19, fontWeight: 800, color: th.heatPos }}>{m(dv.totalAnnual)}</div>
+              <div className="num" style={{ fontSize: 19, fontWeight: 700, color: th.heatPos }}>{m(dv.totalAnnual)}</div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: th.textFaint, marginBottom: 3 }}>월 평균</div>
-              <div className="num" style={{ fontSize: 19, fontWeight: 800, color: th.text }}>{m(dv.totalMonthly)}</div>
+              <div className="num" style={{ fontSize: 19, fontWeight: 700, color: th.text }}>{m(dv.totalMonthly)}</div>
             </div>
             <div>
               <div style={{ fontSize: 11, color: th.textFaint, marginBottom: 3 }}>평균 배당률</div>
-              <div className="num" style={{ fontSize: 19, fontWeight: 800, color: th.text }}>{fmt(dv.avgYield, 2)}%</div>
+              <div className="num" style={{ fontSize: 19, fontWeight: 700, color: th.text }}>{fmt(dv.avgYield, 2)}%</div>
             </div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -2552,11 +2557,11 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur
   const Cell = ({ label, children, color }) => (
     <div style={{ flex: "1 1 150px", minWidth: 130, padding: "12px 16px", borderRight: `1px solid ${th.border}` }}>
       <div style={{ fontSize: 11, color: th.textFaint, fontWeight: 700, marginBottom: 5 }}>{label}</div>
-      <div className="num" style={{ fontSize: 19, fontWeight: 800, letterSpacing: -0.4, color: color || th.text }}>{children}</div>
+      <div className="num" style={{ fontSize: 19, fontWeight: 700, letterSpacing: -0.4, color: color || th.text }}>{children}</div>
     </div>
   );
   return (
-    <div className="ph-card" style={{ borderRadius: 14, border: `1px solid ${th.border}`, background: th.panel, boxShadow: th.cardShadow, overflow: "hidden" }}>
+    <div className="ph-card" style={{ borderRadius: 12, border: `1px solid ${th.border}`, background: th.panel, boxShadow: th.cardShadow, overflow: "hidden" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch" }}>
         <Cell label="총 평가금액">{m(totalAssets)}</Cell>
         <Cell label="투자 원금">{m(cost)}</Cell>
@@ -2565,7 +2570,7 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur
         <Cell label="보유 종목">{count}개</Cell>
         <Cell label="연간 배당 수익" color={divAnnual > 0 ? th.heatPos : th.textFaint}>{divAnnual > 0 ? m(divAnnual) : "—"}</Cell>
         <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", padding: "12px 14px" }}>
-          <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ background: th.panelAlt, border: `1px solid ${th.border}`, color: th.textDim, fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 9, cursor: "pointer", whiteSpace: "nowrap" }}>
+          <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ background: th.panelAlt, border: `1px solid ${th.border}`, color: th.textDim, fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap" }}>
             {hideAmt ? "👁 금액 보이기" : "🙈 금액 가리기"}
           </button>
         </div>
