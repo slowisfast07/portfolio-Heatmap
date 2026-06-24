@@ -71,33 +71,42 @@ async function submitFeedback(payload) {
 
 
 /* ------------------------------------------------------------------ *
- *  THEME  (TradingView design system — blue #2962ff on blue-black)     *
- *  Dark = signature TradingView chart canvas (#131722 / panel #1e222d) *
- *  Light = clean white surfaces. Blue CTA + teal-green/red price       *
- *  semantics (up #26a69a / down #ef5350) shared across both modes.     *
+ *  THEME  (Wise design system — lime #9fe870 on sage canvas)           *
+ *  Light (default) = sage canvas #e8ebe6 + white cards, ink #0e0f0c    *
+ *  text, lime CTA with INK text. Dark = ink #0e0f0c surfaces + lime.   *
+ *  Heat semantics use Wise positive #2ead4b / negative #d03238 — the   *
+ *  lime green is reserved for the brand CTA, never as a success cue.   *
  * ------------------------------------------------------------------ */
 const THEMES = {
-  dark: {
-    name: "dark", bg: "#131722", panel: "#1e222d", panelAlt: "#2a2e39", border: "#2a2e39",
-    borderHover: "#363a45", text: "#d1d4dc", textDim: "#787b86", textFaint: "#5d606b",
-    accent: "#2962ff", accentActive: "#1e53e5", onAccent: "#ffffff", accentGlow: "rgba(41,98,255,.32)",
-    inputBg: "#1e222d", heatPos: "#26a69a", heatNeg: "#ef5350", heatNeu: "#2a2e39",
-    rowHover: "#2a2e39", band: "#161a25",
-    posBg: "rgba(38,166,154,.16)", negBg: "rgba(239,83,80,.16)",
-    cardShadow: "0 2px 8px rgba(0,0,0,.40)",
-    heroGlow: "linear-gradient(180deg, rgba(41,98,255,.10), transparent 72%)",
-  },
   light: {
-    name: "light", bg: "#ffffff", panel: "#ffffff", panelAlt: "#f0f3fa", border: "#e0e3eb",
-    borderHover: "#d1d4dc", text: "#131722", textDim: "#787b86", textFaint: "#9598a1",
-    accent: "#2962ff", accentActive: "#1e53e5", onAccent: "#ffffff", accentGlow: "rgba(41,98,255,.28)",
-    inputBg: "#ffffff", heatPos: "#089981", heatNeg: "#f23645", heatNeu: "#e0e3eb",
-    rowHover: "#f0f3fa", band: "#f8f9fd",
-    posBg: "rgba(8,153,129,.12)", negBg: "rgba(242,54,69,.12)",
-    cardShadow: "0 2px 8px rgba(19,23,34,.08)",
-    heroGlow: "linear-gradient(180deg, rgba(41,98,255,.08), transparent 72%)",
+    name: "light", bg: "#e8ebe6", panel: "#ffffff", panelAlt: "#eef1eb", border: "#d6dccf",
+    borderHover: "#0e0f0c", text: "#0e0f0c", textDim: "#454745", textFaint: "#868685",
+    accent: "#9fe870", accentActive: "#cdffad", onAccent: "#0e0f0c", accentGlow: "rgba(159,232,112,.55)",
+    accentText: "#1f7a37",
+    inputBg: "#ffffff", heatPos: "#2ead4b", heatNeg: "#d03238", heatNeu: "#e8ebe6",
+    rowHover: "#f1f4ee", band: "#e2f6d5",
+    posBg: "rgba(46,173,75,.14)", negBg: "rgba(208,50,56,.12)",
+    cardShadow: "0 1px 3px rgba(14,15,12,.07)",
+    heroGlow: "linear-gradient(180deg, rgba(159,232,112,.22), transparent 74%)",
+  },
+  dark: {
+    name: "dark", bg: "#0e0f0c", panel: "#17190f", panelAlt: "#23261b", border: "#2e3223",
+    borderHover: "#454a38", text: "#e8ebe6", textDim: "#aab0a0", textFaint: "#7c8073",
+    accent: "#9fe870", accentActive: "#cdffad", onAccent: "#0e0f0c", accentGlow: "rgba(159,232,112,.40)",
+    accentText: "#9fe870",
+    inputBg: "#17190f", heatPos: "#5fd07a", heatNeg: "#e5616b", heatNeu: "#23261b",
+    rowHover: "#23261b", band: "#163300",
+    posBg: "rgba(95,208,122,.16)", negBg: "rgba(229,97,107,.16)",
+    cardShadow: "0 2px 10px rgba(0,0,0,.45)",
+    heroGlow: "linear-gradient(180deg, rgba(159,232,112,.12), transparent 74%)",
   },
 };
+
+/* Wise's typographic signature: a very heavy geometric display face (Manrope 800/900
+   as the open-source stand-in for Wise Sans) for brand / hero / section moments. Inter
+   carries body + numbers. Spread DISP into headline styles; DISP_HERO for the big hero. */
+const DISP = { fontFamily: "Manrope, Inter, system-ui, sans-serif", fontWeight: 800, letterSpacing: "-0.02em" };
+const DISP_HERO = { fontFamily: "Manrope, Inter, system-ui, sans-serif", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.02 };
 
 const SECTORS = [
   "Technology", "Communication", "Consumer Cyclical", "Consumer Defensive", "Financial",
@@ -728,7 +737,7 @@ function krMarketSession(d = new Date()) {
 }
 
 export default function App() {
-  const [themeName, setThemeName] = useState("dark");
+  const [themeName, setThemeName] = useState("light");
   const th = THEMES[themeName];
   const [displayCur, setDisplayCur] = useState("USD");
   const [holdings, setHoldings] = useState(SEED);
@@ -1109,10 +1118,11 @@ export default function App() {
   const capNow = heatMode === "return" ? capReturn : capChange;
 
   return (
-    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: '-apple-system, BlinkMacSystemFont, "Trebuchet MS", Roboto, "Helvetica Neue", Arial, sans-serif' }}>
+    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: 'Inter, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif' }}>
       <style>{`
         .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";letter-spacing:0;}
-        input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:#2962ff!important;box-shadow:0 0 0 2px rgba(41,98,255,.45);}
+        .disp{font-family:Manrope,Inter,system-ui,sans-serif;font-weight:800;letter-spacing:-0.02em;}
+        input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:${th.borderHover}!important;box-shadow:0 0 0 3px ${th.accentGlow};}
         .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
         .ph-primary:hover{box-shadow:0 4px 16px ${th.accentGlow};}
         .ph-card{transition:box-shadow .2s, border-color .2s, transform .2s;}
@@ -1133,14 +1143,14 @@ export default function App() {
       `}</style>
 
       {/* HEADER */}
-      <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "16px 22px", borderBottom: `1px solid ${th.border}`, background: th.bg, position: "sticky", top: 0, zIndex: 20 }}>
+      <header style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 22px", borderBottom: `1px solid ${th.border}`, background: th.panel, position: "sticky", top: 0, zIndex: 20 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: th.accent, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 17, color: th.onAccent }}>P</div>
-          <div style={{ fontWeight: 700, fontSize: 16, letterSpacing: -0.3 }}>{CONFIG.productName}</div>
+          <div style={{ width: 34, height: 34, borderRadius: 11, background: th.accent, display: "grid", placeItems: "center", fontSize: 18, color: th.onAccent, ...DISP }}>P</div>
+          <div style={{ fontSize: 16.5, ...DISP }}>{CONFIG.productName}</div>
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ textAlign: "right", marginRight: 6 }}>
-          <div className="num" style={{ fontSize: 22, fontWeight: 700, letterSpacing: -0.5 }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
+          <div className="num" style={{ fontSize: 23, ...DISP }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
           <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 3 }}>
             <DeltaPill th={th} label="오늘" v={dayChange} />
             <DeltaPill th={th} label="수익" v={totalReturn} />
@@ -1186,7 +1196,7 @@ export default function App() {
       {/* BODY */}
       <div style={{ maxWidth: "100%", margin: "0 auto", padding: "18px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
         {previewMode && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 12, border: `1px solid ${th.accent}`, background: th.panelAlt }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 16, border: `1px solid ${th.accent}`, background: th.panelAlt }}>
             <span style={{ fontSize: 18 }}>👀</span>
             <div style={{ flex: 1, minWidth: 180 }}>
               <div style={{ fontWeight: 700, fontSize: 13.5 }}>예시 데이터를 둘러보는 중이에요</div>
@@ -1217,7 +1227,7 @@ export default function App() {
           right={
             <div style={{ display: "flex", gap: 8 }}>
               {!portfolioCollapsed && <>
-                <button className="ph-btn" onClick={() => setAdvanced((v) => !v)} style={{ ...secondaryBtn(th), ...(advanced ? { borderColor: th.accent, color: th.accent } : {}) }} title="매수일·RSI·볼린저(BB%) 열 표시">{advanced ? "✓ 심화" : "심화"}</button>
+                <button className="ph-btn" onClick={() => setAdvanced((v) => !v)} style={{ ...secondaryBtn(th), ...(advanced ? { borderColor: th.accentText, color: th.accentText } : {}) }} title="매수일·RSI·볼린저(BB%) 열 표시">{advanced ? "✓ 심화" : "심화"}</button>
                 <button className="ph-btn" onClick={() => setShowImport((v) => !v)} style={{ ...secondaryBtn(th) }}><Upload size={14} /> 가져오기</button>
                 <button className="ph-btn ph-primary" onClick={addHolding} style={primaryBtn(th)}><Plus size={15} /> 종목 추가</button>
               </>}
@@ -1229,7 +1239,7 @@ export default function App() {
           {portfolioCollapsed ? (
             <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 2px", fontSize: 13, color: th.textDim, flexWrap: "wrap" }}>
               <span>입력한 종목 <b style={{ color: th.text }}>{holdings.filter((h) => h.ticker).length}개</b>는 위 히트맵·섹터 비중에 그대로 반영돼요.</span>
-              <button className="ph-btn" onClick={() => setPortfolioCollapsed(false)} style={{ background: "transparent", border: "none", color: th.accent, fontWeight: 700, cursor: "pointer", padding: 0 }}>편집하려면 펼치기 →</button>
+              <button className="ph-btn" onClick={() => setPortfolioCollapsed(false)} style={{ background: "transparent", border: "none", color: th.accentText, fontWeight: 700, cursor: "pointer", padding: 0 }}>편집하려면 펼치기 →</button>
             </div>
           ) : (
             <>
@@ -1296,7 +1306,7 @@ function CashCard({ th, cash, displayCur, conv, cashValue, cashPct, investedValu
       titleExtra={<Wallet size={15} color={th.textDim} />}
       right={<button className="ph-btn ph-primary" onClick={onAdd} style={{ ...primaryBtn(th), padding: "6px 10px", fontSize: 12 }}><Plus size={14} /> 현금</button>}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 4 }}>
-        <span className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: -0.6 }}>{fmt(cashPct, 1)}%</span>
+        <span className="num" style={{ fontSize: 34, ...DISP }}>{fmt(cashPct, 1)}%</span>
         <span style={{ fontSize: 12, color: th.textDim }}>현금 / 총자산</span>
       </div>
       <div className="num" style={{ fontSize: 13, color: th.textDim, marginBottom: 12 }}>{fmtMoney(cashValue, displayCur)}</div>
@@ -1440,7 +1450,7 @@ function Donut({ data, th, colorMap }) {
         </ResponsiveContainer>
         <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", pointerEvents: "none" }}>
           <div style={{ textAlign: "center" }}>
-            <div className="num" style={{ fontSize: 26, fontWeight: 700, letterSpacing: -0.5, color: col(top.sector) }}>{fmt(top.pct, 1)}%</div>
+            <div className="num" style={{ fontSize: 30, ...DISP, color: col(top.sector) }}>{fmt(top.pct, 1)}%</div>
             <div style={{ fontSize: 11, color: th.textDim, maxWidth: 90, lineHeight: 1.2 }}>{top.sector}</div>
           </div>
         </div>
@@ -1535,11 +1545,11 @@ function DeltaPill({ th, label, v }) {
 }
 function Panel({ th, title, sub, titleExtra, right, glow, children }) {
   return (
-    <div className="ph-card" style={{ position: "relative", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 18, overflow: "hidden" }}>
+    <div className="ph-card" style={{ position: "relative", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 18, padding: 22, overflow: "hidden" }}>
       {glow && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 90, background: th.heroGlow, pointerEvents: "none" }} />}
-      <div style={{ position: "relative", display: "flex", alignItems: "center", marginBottom: 14, gap: 12, flexWrap: "wrap" }}>
+      <div style={{ position: "relative", display: "flex", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div><div style={{ fontSize: 14, fontWeight: 700, letterSpacing: -0.2 }}>{title}</div>{sub && <div style={{ fontSize: 11, color: th.textDim, marginTop: 1 }}>{sub}</div>}</div>
+          <div><div style={{ fontSize: 18, ...DISP }}>{title}</div>{sub && <div style={{ fontSize: 12, color: th.textDim, marginTop: 2 }}>{sub}</div>}</div>
           {titleExtra}
         </div>
         <div style={{ flex: 1 }} />{right}
@@ -1554,16 +1564,16 @@ function Segmented({ th, value, onChange, options, small }) {
       {options.map(([val, label]) => {
         const on = value === val;
         return (
-          <button key={val} className="ph-btn" onClick={() => onChange(val)} style={{ border: "none", borderRadius: 6, padding: small ? "4px 10px" : "5px 13px", fontSize: small ? 11.5 : 12.5, fontWeight: 600, background: on ? th.accent : "transparent", color: on ? th.onAccent : th.textDim, cursor: "pointer", transition: "all .15s", boxShadow: "none" }}>{label}</button>
+          <button key={val} className="ph-btn" onClick={() => onChange(val)} style={{ border: "none", borderRadius: 9999, padding: small ? "5px 12px" : "6px 15px", fontSize: small ? 11.5 : 12.5, fontWeight: 700, background: on ? th.accent : "transparent", color: on ? th.onAccent : th.textDim, cursor: "pointer", transition: "all .15s", boxShadow: "none" }}>{label}</button>
         );
       })}
     </div>
   );
 }
-const iconBtn = (th) => ({ display: "grid", placeItems: "center", width: 34, height: 34, borderRadius: 8, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, cursor: "pointer" });
-const primaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.accent, color: th.onAccent, border: "none", padding: "9px 16px", borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: "pointer" });
-const secondaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.panelAlt, color: th.text, border: `1px solid ${th.border}`, padding: "9px 16px", borderRadius: 6, fontWeight: 600, fontSize: 13, cursor: "pointer" });
-const inpStyle = (th, w) => ({ width: w || undefined, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: "6px 9px", fontSize: 12.5 });
+const iconBtn = (th) => ({ display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: 9999, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, cursor: "pointer" });
+const primaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.accent, color: th.onAccent, border: "none", padding: "10px 20px", borderRadius: 9999, fontWeight: 700, fontSize: 13.5, cursor: "pointer" });
+const secondaryBtn = (th) => ({ display: "flex", alignItems: "center", gap: 6, background: th.panelAlt, color: th.text, border: "none", padding: "10px 20px", borderRadius: 9999, fontWeight: 700, fontSize: 13.5, cursor: "pointer" });
+const inpStyle = (th, w) => ({ width: w || undefined, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 12, padding: "8px 12px", fontSize: 12.5 });
 const selStyle = (th, w) => ({ width: w, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: "6px 7px", fontSize: 12, cursor: "pointer" });
 
 /* ------------------------------------------------------------------ *
@@ -1650,7 +1660,7 @@ function IdeaDetail({ th, idea, onClose, onAdd }) {
     return () => { live = false; };
   }, [sym]);
   return (
-    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 18 }}>
+    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
         <span style={{ fontSize: 17, fontWeight: 700 }}>{bareCode(sym)}</span>
         <span style={{ fontSize: 12, color: th.textDim, background: th.panelAlt, padding: "2px 9px", borderRadius: 999 }}>{idea.theme}</span>
@@ -1672,7 +1682,7 @@ function IdeaDetail({ th, idea, onClose, onAdd }) {
 
 function WhaleCard({ th, w, onSelect, on }) {
   return (
-    <button className="ph-card" onClick={() => onSelect(w)} style={{ width: 234, padding: 16, borderRadius: 12, border: `1px solid ${on ? th.accent : th.border}`, background: th.panel, cursor: "pointer", textAlign: "left", color: th.text }}>
+    <button className="ph-card" onClick={() => onSelect(w)} style={{ width: 234, padding: 16, borderRadius: 16, border: `1px solid ${on ? th.accent : th.border}`, background: th.panel, cursor: "pointer", textAlign: "left", color: th.text }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
         <div style={{ width: 42, height: 42, borderRadius: "50%", background: `linear-gradient(135deg,${w.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 16, color: "#fff", flexShrink: 0 }}>{w.name.slice(0, 1)}</div>
         <div style={{ minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 13.5, whiteSpace: "nowrap", color: th.text }}>{w.name}</div><div style={{ fontSize: 11, color: th.textDim, whiteSpace: "nowrap" }}>{w.fund}</div></div>
@@ -1699,7 +1709,7 @@ function WhaleDetail({ th, whale, onClose, onAdd }) {
   const cmap = {}; let pi = 0;
   data.forEach((d) => { cmap[d.sector] = d.sector === "기타" ? CASH_COLOR : PALETTE[pi++ % PALETTE.length]; });
   return (
-    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 18 }}>
+    <div className="ph-card" style={{ marginTop: 12, background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
         <div style={{ width: 38, height: 38, borderRadius: "50%", background: `linear-gradient(135deg,${whale.hue},${th.panelAlt})`, display: "grid", placeItems: "center", fontWeight: 700, fontSize: 15, color: "#fff" }}>{whale.name.slice(0, 1)}</div>
         <div><div style={{ fontWeight: 700, fontSize: 15 }}>{whale.name}</div><div style={{ fontSize: 11.5, color: th.textDim }}>{whale.fund} · {whale.holdings.length - 1}개 주요 종목</div></div>
@@ -1752,7 +1762,7 @@ function GoalCard({ th, goal, setGoal, totalAssets, displayCur, conv }) {
       {goalInDisplay ? (
         <>
           <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
-            <span className="num" style={{ fontSize: 30, fontWeight: 700, letterSpacing: -0.6, color: pct >= 100 ? th.heatPos : th.accent }}>{fmt(pct, 1)}%</span>
+            <span className="num" style={{ fontSize: 34, ...DISP, color: pct >= 100 ? th.heatPos : th.text }}>{fmt(pct, 1)}%</span>
             <span style={{ fontSize: 12, color: th.textDim }}>달성</span>
           </div>
           <div style={{ height: 10, borderRadius: 6, overflow: "hidden", background: th.inputBg, marginBottom: 8 }}>
@@ -1817,7 +1827,7 @@ function BenchmarkCard({ th, dayChange, benchmarks, perf }) {
   const series = perf?.data || [];
   const hasLine = series.length > 1;
   const LINES = [
-    { key: "me", name: "내 포트폴리오", color: th.accent, width: 2.6 },
+    { key: "me", name: "내 포트폴리오", color: th.accentText, width: 2.6 },
     { key: "gspc", name: "S&P 500", color: "#16c784", width: 1.6 },
     { key: "ndx", name: "나스닥100", color: "#f5a623", width: 1.6 },
     { key: "ks", name: "코스피", color: "#ec4899", width: 1.6 },
@@ -1964,7 +1974,7 @@ function ImportPanel({ th, onImport }) {
   };
 
   return (
-    <div style={{ border: `1px solid ${th.border}`, borderRadius: 12, padding: 14, marginBottom: 14, background: th.band }}>
+    <div style={{ border: `1px solid ${th.border}`, borderRadius: 16, padding: 14, marginBottom: 14, background: th.band }}>
       <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
         <button className="ph-btn" onClick={() => setMode("csv")} style={tabBtn(th, mode === "csv")}><FileText size={14} /> CSV 붙여넣기</button>
         <button className="ph-btn" onClick={() => setMode("img")} style={tabBtn(th, mode === "img")}><ImageIcon size={14} /> 스크린샷</button>
@@ -1989,11 +1999,11 @@ function ImportPanel({ th, onImport }) {
           </p>
         </div>
       )}
-      {msg && <div style={{ fontSize: 12, color: th.accent, marginTop: 10 }}>{msg}</div>}
+      {msg && <div style={{ fontSize: 12, color: th.accentText, marginTop: 10 }}>{msg}</div>}
     </div>
   );
 }
-const tabBtn = (th, on) => ({ display: "flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 999, border: `1px solid ${on ? "transparent" : th.border}`, background: on ? th.accent : "transparent", color: on ? "#fff" : th.textDim, fontWeight: 700, fontSize: 12, cursor: "pointer" });
+const tabBtn = (th, on) => ({ display: "flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 9999, border: `1px solid ${on ? "transparent" : th.border}`, background: on ? th.accent : "transparent", color: on ? th.onAccent : th.textDim, fontWeight: 700, fontSize: 12, cursor: "pointer" });
 
 /* ------------------------------------------------------------------ *
  *  TOP NAV (jump to sections)                                         *
@@ -2162,10 +2172,10 @@ function StockChart({ th, sym, cur, initialData }) {
       <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
         {CHART_RANGES.map(([k, label]) => (
           <button key={k} className="ph-btn" onClick={() => { setCustomOpen(false); setRangeKey(k); }}
-            style={{ background: rangeKey === k ? th.accent : "transparent", color: rangeKey === k ? "#fff" : th.textDim, border: `1px solid ${rangeKey === k ? th.accent : th.border}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+            style={{ background: rangeKey === k ? th.accent : "transparent", color: rangeKey === k ? th.onAccent : th.textDim, border: `1px solid ${rangeKey === k ? th.accent : th.border}`, borderRadius: 9999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{label}</button>
         ))}
         <button className="ph-btn" onClick={() => setCustomOpen((v) => !v)}
-          style={{ background: rangeKey === "custom" ? th.accent : "transparent", color: rangeKey === "custom" ? "#fff" : th.textDim, border: `1px solid ${rangeKey === "custom" ? th.accent : th.border}`, borderRadius: 8, padding: "4px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📅 기간선택</button>
+          style={{ background: rangeKey === "custom" ? th.accent : "transparent", color: rangeKey === "custom" ? th.onAccent : th.textDim, border: `1px solid ${rangeKey === "custom" ? th.accent : th.border}`, borderRadius: 9999, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>📅 기간선택</button>
       </div>
       {customOpen && (
         <div style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 10, flexWrap: "wrap" }}>
@@ -2206,7 +2216,7 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
   const sym = info.key || info.ticker;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 80, display: "grid", placeItems: "center", padding: 18 }}>
-      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(640px,100%)", maxHeight: "92vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 20, boxShadow: th.cardShadow }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(640px,100%)", maxHeight: "92vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
           <span style={{ fontSize: 19, fontWeight: 700 }}>{bareCode(info.ticker)}</span>
           <span style={{ fontSize: 13, color: th.textDim }}>{info.name || ""}</span>
@@ -2242,7 +2252,7 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
         const v = valueOf(h), wpct = totalAssets ? (v / totalAssets) * 100 : 0, ret = returnPct(h);
         const metric = (label, val, color) => <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, color: th.textFaint }}>{label}</span><span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: color || th.text }}>{val}</span></div>;
         return (
-          <div key={h.id} className="ph-card" style={{ border: `1px solid ${th.border}`, borderRadius: 12, padding: 13, background: th.panel, opacity: h.included === false ? 0.5 : 1 }}>
+          <div key={h.id} className="ph-card" style={{ border: `1px solid ${th.border}`, borderRadius: 16, padding: 13, background: th.panel, opacity: h.included === false ? 0.5 : 1 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
               <input type="checkbox" checked={h.included !== false} onChange={(e) => onUpdate(h.id, { included: e.target.checked })} style={{ accentColor: th.accent, cursor: "pointer", width: 18, height: 18, flexShrink: 0 }} title="집계·히트맵 포함" />
               <div style={{ flex: 1 }}>
@@ -2281,18 +2291,22 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
  *  MVP: welcome banner + feedback/waitlist modal                      *
  * ------------------------------------------------------------------ */
 function WelcomeBanner({ th, onSample, onAdd, onClose }) {
+  // Wise "hero-band-dark": near-black ink surface with a lime headline — the brand's
+  // signature polarity-flipped hero moment.
   return (
-    <div style={{ position: "relative", borderRadius: 12, padding: "22px 22px", border: `1px solid ${th.border}`, background: `linear-gradient(120deg, ${th.panel}, ${th.panelAlt})`, overflow: "hidden" }}>
-      <div style={{ position: "absolute", right: -40, top: -40, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(252,213,53,.16), transparent 70%)" }} />
-      <button className="ph-btn" onClick={onClose} style={{ ...iconBtn(th), position: "absolute", right: 12, top: 12 }}>✕</button>
-      <div style={{ fontSize: 21, fontWeight: 700, letterSpacing: -0.4, marginBottom: 6 }}>내 모든 자산을 한 화면에 👋</div>
-      <p style={{ fontSize: 13.5, color: th.textDim, lineHeight: 1.7, maxWidth: 620, margin: "0 0 16px" }}>
-        미국·한국 주식과 코인을 넣으면 <b style={{ color: th.text }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
-        티커만 입력하면 이름·섹터·시세가 알아서 채워집니다. 처음이라면 예시로 먼저 둘러보세요.
-      </p>
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <button className="ph-btn ph-primary" onClick={onSample} style={primaryBtn(th)}>✨ 예시로 둘러보기</button>
-        <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={secondaryBtn(th)}><Plus size={15} /> 내 종목 추가</button>
+    <div style={{ position: "relative", borderRadius: 24, padding: "48px 44px", background: "#0e0f0c", overflow: "hidden" }}>
+      <div style={{ position: "absolute", right: -60, top: -60, width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, rgba(159,232,112,.20), transparent 70%)" }} />
+      <button className="ph-btn" onClick={onClose} style={{ display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: 9999, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.16)", color: "#e8ebe6", cursor: "pointer", position: "absolute", right: 16, top: 16 }}>✕</button>
+      <div style={{ position: "relative", maxWidth: 760 }}>
+        <div style={{ fontSize: "clamp(34px, 5vw, 56px)", color: th.accent, marginBottom: 16, ...DISP_HERO }}>내 모든 자산을<br />한 화면에.</div>
+        <p style={{ fontSize: 17, color: "#e8ebe6", lineHeight: 1.6, maxWidth: 620, margin: "0 0 28px" }}>
+          미국·한국 주식과 코인을 넣으면 <b style={{ color: "#ffffff" }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
+          티커만 입력하면 이름·섹터·시세가 알아서 채워집니다. 처음이라면 예시로 먼저 둘러보세요.
+        </p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+          <button className="ph-btn ph-primary" onClick={onSample} style={{ ...primaryBtn(th), padding: "13px 26px", fontSize: 15 }}>✨ 예시로 둘러보기</button>
+          <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: "#e8ebe6", border: "1px solid rgba(255,255,255,.28)", padding: "13px 24px", borderRadius: 9999, fontWeight: 700, fontSize: 15, cursor: "pointer" }}><Plus size={16} /> 내 종목 추가</button>
+        </div>
       </div>
     </div>
   );
@@ -2309,10 +2323,10 @@ function FeedbackCard({ onOpen }) {
         maxWidth: 480,
         boxSizing: "border-box",
         padding: "44px 32px 32px",
-        borderRadius: 12,
-        border: "1px solid #2a2e39",
-        background: "#1e222d",
-        boxShadow: "0 2px 8px rgba(0,0,0,.40)",
+        borderRadius: 24,
+        border: "1px solid #d6dccf",
+        background: "#ffffff",
+        boxShadow: "0 6px 24px rgba(14,15,12,.10)",
         textAlign: "center",
         overflow: "hidden",
       }}
@@ -2325,9 +2339,9 @@ function FeedbackCard({ onOpen }) {
           right: 18,
           fontSize: 13,
           fontWeight: 600,
-          color: "#2962ff",
-          background: "rgba(41,98,255,.14)",
-          border: "1px solid rgba(41,98,255,.38)",
+          color: "#054d28",
+          background: "#e2f6d5",
+          border: "none",
           padding: "5px 14px",
           borderRadius: 9999,
         }}
@@ -2341,26 +2355,26 @@ function FeedbackCard({ onOpen }) {
           width: 72,
           height: 72,
           margin: "0 auto 22px",
-          borderRadius: 12,
+          borderRadius: 9999,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#2962ff",
+          background: "#9fe870",
         }}
       >
         <svg width="38" height="38" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
-            stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            stroke="#0e0f0c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
 
       {/* title */}
-      <div style={{ fontSize: 28, fontWeight: 700, color: "#d1d4dc", letterSpacing: "-0.02em", marginBottom: 12 }}>
+      <div style={{ fontSize: 30, color: "#0e0f0c", marginBottom: 12, fontFamily: "Manrope, Inter, system-ui, sans-serif", fontWeight: 800, letterSpacing: "-0.02em" }}>
         의견 보내기
       </div>
 
       {/* subtitle */}
-      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#787b86", maxWidth: 340, margin: "0 auto 28px" }}>
+      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#454745", maxWidth: 340, margin: "0 auto 28px" }}>
         쓰면서 불편한 점이나 더 있으면 좋겠는 기능을 알려주시면 빠르게 반영할게요
       </div>
 
@@ -2376,9 +2390,9 @@ function FeedbackCard({ onOpen }) {
           border: "none",
           cursor: "pointer",
           fontSize: 16,
-          fontWeight: 600,
-          color: "#ffffff",
-          background: hover ? "#1e53e5" : "#2962ff",
+          fontWeight: 700,
+          color: "#0e0f0c",
+          background: hover ? "#cdffad" : "#9fe870",
           transition: "all .18s ease",
         }}
       >
@@ -2407,7 +2421,7 @@ function FeedbackModal({ th, onClose }) {
   };
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
-      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(440px,100%)", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 12, padding: 20, boxShadow: th.cardShadow }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(440px,100%)", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}>
           <span style={{ fontSize: 16, fontWeight: 700 }}>의견 보내기</span>
           <div style={{ flex: 1 }} />
@@ -2466,7 +2480,7 @@ function WeightCard({ th, rows }) {
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ height: 14, borderRadius: 4, background: th.inputBg, overflow: "hidden" }}><div style={{ width: `${r.valW}%`, height: "100%", background: th.accent }} /></div>
-              <span className="num" style={{ fontSize: 10.5, color: th.accent, fontWeight: 700 }}>{fmt(r.valW, 1)}%</span>
+              <span className="num" style={{ fontSize: 10.5, color: th.accentText, fontWeight: 700 }}>{fmt(r.valW, 1)}%</span>
             </div>
           </div>
         ))}
@@ -2561,7 +2575,7 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur
     </div>
   );
   return (
-    <div className="ph-card" style={{ borderRadius: 12, border: `1px solid ${th.border}`, background: th.panel, boxShadow: th.cardShadow, overflow: "hidden" }}>
+    <div className="ph-card" style={{ borderRadius: 16, border: `1px solid ${th.border}`, background: th.panel, boxShadow: th.cardShadow, overflow: "hidden" }}>
       <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch" }}>
         <Cell label="총 평가금액">{m(totalAssets)}</Cell>
         <Cell label="투자 원금">{m(cost)}</Cell>
