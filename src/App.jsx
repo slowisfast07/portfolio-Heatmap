@@ -71,42 +71,43 @@ async function submitFeedback(payload) {
 
 
 /* ------------------------------------------------------------------ *
- *  THEME  (Wise design system — lime #9fe870 on sage canvas)           *
- *  Light (default) = sage canvas #e8ebe6 + white cards, ink #0e0f0c    *
- *  text, lime CTA with INK text. Dark = ink #0e0f0c surfaces + lime.   *
- *  Heat semantics use Wise positive #2ead4b / negative #d03238 — the   *
- *  lime green is reserved for the brand CTA, never as a success cue.   *
+ *  THEME  (Coinbase design system — blue #0052ff on near-black)        *
+ *  Dark (default) = calm near-black canvas #0a0b0d + #16181c cards,    *
+ *  white text. Coinbase Blue is used SCARCELY (CTA, logo, active tab,  *
+ *  inline accent) — never as a flood. Light = white editorial variant. *
+ *  Heat semantics: up #05b169 / down #cf202f — text/tile color only.   *
  * ------------------------------------------------------------------ */
 const THEMES = {
-  light: {
-    name: "light", bg: "#e8ebe6", panel: "#ffffff", panelAlt: "#eef1eb", border: "#d6dccf",
-    borderHover: "#0e0f0c", text: "#0e0f0c", textDim: "#454745", textFaint: "#868685",
-    accent: "#9fe870", accentActive: "#cdffad", onAccent: "#0e0f0c", accentGlow: "rgba(159,232,112,.55)",
-    accentText: "#1f7a37",
-    inputBg: "#ffffff", heatPos: "#2ead4b", heatNeg: "#d03238", heatNeu: "#e8ebe6",
-    rowHover: "#f1f4ee", band: "#e2f6d5",
-    posBg: "rgba(46,173,75,.14)", negBg: "rgba(208,50,56,.12)",
-    cardShadow: "0 1px 3px rgba(14,15,12,.07)",
-    heroGlow: "linear-gradient(180deg, rgba(159,232,112,.22), transparent 74%)",
-  },
   dark: {
-    name: "dark", bg: "#0e0f0c", panel: "#17190f", panelAlt: "#23261b", border: "#2e3223",
-    borderHover: "#454a38", text: "#e8ebe6", textDim: "#aab0a0", textFaint: "#7c8073",
-    accent: "#9fe870", accentActive: "#cdffad", onAccent: "#0e0f0c", accentGlow: "rgba(159,232,112,.40)",
-    accentText: "#9fe870",
-    inputBg: "#17190f", heatPos: "#5fd07a", heatNeg: "#e5616b", heatNeu: "#23261b",
-    rowHover: "#23261b", band: "#163300",
-    posBg: "rgba(95,208,122,.16)", negBg: "rgba(229,97,107,.16)",
-    cardShadow: "0 2px 10px rgba(0,0,0,.45)",
-    heroGlow: "linear-gradient(180deg, rgba(159,232,112,.12), transparent 74%)",
+    name: "dark", bg: "#0a0b0d", panel: "#16181c", panelAlt: "#1f2227", border: "#23262c",
+    borderHover: "#33373d", text: "#ffffff", textDim: "#a8acb3", textFaint: "#7c828a",
+    accent: "#0052ff", accentActive: "#003ecc", onAccent: "#ffffff", accentGlow: "rgba(0,82,255,.45)",
+    accentText: "#4d8bff",
+    inputBg: "#16181c", heatPos: "#05b169", heatNeg: "#cf202f", heatNeu: "#1f2227",
+    rowHover: "#1f2227", band: "#101216",
+    posBg: "rgba(5,177,105,.16)", negBg: "rgba(207,32,47,.16)",
+    cardShadow: "0 4px 12px rgba(0,0,0,.40)",
+    heroGlow: "linear-gradient(180deg, rgba(0,82,255,.14), transparent 74%)",
+  },
+  light: {
+    name: "light", bg: "#ffffff", panel: "#ffffff", panelAlt: "#eef0f3", border: "#dee1e6",
+    borderHover: "#0a0b0d", text: "#0a0b0d", textDim: "#5b616e", textFaint: "#7c828a",
+    accent: "#0052ff", accentActive: "#003ecc", onAccent: "#ffffff", accentGlow: "rgba(0,82,255,.28)",
+    accentText: "#0052ff",
+    inputBg: "#ffffff", heatPos: "#05b169", heatNeg: "#cf202f", heatNeu: "#eef0f3",
+    rowHover: "#f7f7f7", band: "#f7f7f7",
+    posBg: "rgba(5,177,105,.12)", negBg: "rgba(207,32,47,.10)",
+    cardShadow: "0 4px 12px rgba(10,11,13,.06)",
+    heroGlow: "linear-gradient(180deg, rgba(0,82,255,.08), transparent 74%)",
   },
 };
 
-/* Wise's typographic signature: a very heavy geometric display face (Manrope 800/900
-   as the open-source stand-in for Wise Sans) for brand / hero / section moments. Inter
-   carries body + numbers. Spread DISP into headline styles; DISP_HERO for the big hero. */
-const DISP = { fontFamily: "Manrope, Inter, system-ui, sans-serif", fontWeight: 800, letterSpacing: "-0.02em" };
-const DISP_HERO = { fontFamily: "Manrope, Inter, system-ui, sans-serif", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 1.02 };
+/* Coinbase's typographic signature: editorial CALM — display sits at weight ~500 (never
+   heavy/bombastic) with tight negative tracking, same Inter family as body (no display-face
+   switch). Numbers render in mono via .num. DISP carries weight+tracking only so .num (mono)
+   still wins on numeric spots while text headlines inherit Inter. DISP_HERO for the big hero. */
+const DISP = { fontWeight: 500, letterSpacing: "-0.02em" };
+const DISP_HERO = { fontWeight: 500, letterSpacing: "-0.035em", lineHeight: 1.05 };
 
 const SECTORS = [
   "Technology", "Communication", "Consumer Cyclical", "Consumer Defensive", "Financial",
@@ -737,7 +738,7 @@ function krMarketSession(d = new Date()) {
 }
 
 export default function App() {
-  const [themeName, setThemeName] = useState("light");
+  const [themeName, setThemeName] = useState("dark");
   const th = THEMES[themeName];
   const [displayCur, setDisplayCur] = useState("USD");
   const [holdings, setHoldings] = useState(SEED);
@@ -1118,10 +1119,10 @@ export default function App() {
   const capNow = heatMode === "return" ? capReturn : capChange;
 
   return (
-    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: 'Inter, system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif' }}>
+    <div style={{ background: th.bg, color: th.text, minHeight: "100vh", transition: "background .25s", fontFamily: 'Inter, system-ui, -apple-system, "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif' }}>
       <style>{`
-        .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";letter-spacing:0;}
-        .disp{font-family:Manrope,Inter,system-ui,sans-serif;font-weight:800;letter-spacing:-0.02em;}
+        .num{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:500;letter-spacing:0;}
+        .disp{font-weight:500;letter-spacing:-0.02em;}
         input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:${th.borderHover}!important;box-shadow:0 0 0 3px ${th.accentGlow};}
         .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
         .ph-primary:hover{box-shadow:0 4px 16px ${th.accentGlow};}
@@ -2309,18 +2310,18 @@ function WelcomeBanner({ th, onSample, onAdd, onClose }) {
   // Wise "hero-band-dark": near-black ink surface with a lime headline — the brand's
   // signature polarity-flipped hero moment.
   return (
-    <div className="hero-band" style={{ position: "relative", borderRadius: 24, padding: "48px 44px", background: "#0e0f0c", overflow: "hidden" }}>
-      <div style={{ position: "absolute", right: -60, top: -60, width: 280, height: 280, borderRadius: "50%", background: "radial-gradient(circle, rgba(159,232,112,.20), transparent 70%)" }} />
-      <button className="ph-btn" onClick={onClose} style={{ display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: 9999, background: "rgba(255,255,255,.08)", border: "1px solid rgba(255,255,255,.16)", color: "#e8ebe6", cursor: "pointer", position: "absolute", right: 16, top: 16 }}>✕</button>
+    <div className="hero-band" style={{ position: "relative", borderRadius: 24, padding: "52px 44px", background: "#0a0b0d", border: "0.5px solid #23262c", overflow: "hidden" }}>
+      <div style={{ position: "absolute", right: -80, top: -80, width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,82,255,.16), transparent 70%)" }} />
+      <button className="ph-btn" onClick={onClose} style={{ display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: 9999, background: "#16181c", border: "0.5px solid #23262c", color: "#a8acb3", cursor: "pointer", position: "absolute", right: 16, top: 16 }}>✕</button>
       <div style={{ position: "relative", maxWidth: 760 }}>
-        <div className="hero-title" style={{ fontSize: "clamp(34px, 5vw, 56px)", color: th.accent, marginBottom: 16, ...DISP_HERO }}>내 모든 자산을<br />한 화면에.</div>
-        <p style={{ fontSize: 17, color: "#e8ebe6", lineHeight: 1.6, maxWidth: 620, margin: "0 0 28px" }}>
-          미국·한국 주식과 코인을 넣으면 <b style={{ color: "#ffffff" }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
+        <div className="hero-title" style={{ fontSize: "clamp(34px, 5vw, 58px)", color: "#ffffff", marginBottom: 18, ...DISP_HERO }}>내 모든 자산을<br />한 화면에.</div>
+        <p style={{ fontSize: 16.5, color: "#a8acb3", lineHeight: 1.6, maxWidth: 620, margin: "0 0 28px" }}>
+          미국·한국 주식과 코인을 넣으면 <b style={{ color: "#ffffff", fontWeight: 600 }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
           티커만 입력하면 이름·섹터·시세가 알아서 채워집니다. 처음이라면 예시로 먼저 둘러보세요.
         </p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-          <button className="ph-btn ph-primary" onClick={onSample} style={{ ...primaryBtn(th), padding: "13px 26px", fontSize: 15 }}>✨ 예시로 둘러보기</button>
-          <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: "#e8ebe6", border: "1px solid rgba(255,255,255,.28)", padding: "13px 24px", borderRadius: 9999, fontWeight: 700, fontSize: 15, cursor: "pointer" }}><Plus size={16} /> 내 종목 추가</button>
+          <button className="ph-btn ph-primary" onClick={onSample} style={{ ...primaryBtn(th), padding: "13px 26px", fontSize: 15 }}>예시로 둘러보기</button>
+          <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,.28)", padding: "13px 24px", borderRadius: 9999, fontWeight: 600, fontSize: 15, cursor: "pointer" }}><Plus size={16} /> 내 종목 추가</button>
         </div>
       </div>
     </div>
@@ -2339,9 +2340,9 @@ function FeedbackCard({ onOpen }) {
         boxSizing: "border-box",
         padding: "44px 32px 32px",
         borderRadius: 24,
-        border: "1px solid #d6dccf",
-        background: "#ffffff",
-        boxShadow: "0 6px 24px rgba(14,15,12,.10)",
+        border: "0.5px solid #23262c",
+        background: "#16181c",
+        boxShadow: "0 4px 12px rgba(0,0,0,.40)",
         textAlign: "center",
         overflow: "hidden",
       }}
@@ -2354,8 +2355,8 @@ function FeedbackCard({ onOpen }) {
           right: 18,
           fontSize: 13,
           fontWeight: 600,
-          color: "#054d28",
-          background: "#e2f6d5",
+          color: "#4d8bff",
+          background: "rgba(0,82,255,.14)",
           border: "none",
           padding: "5px 14px",
           borderRadius: 9999,
@@ -2374,22 +2375,22 @@ function FeedbackCard({ onOpen }) {
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
-          background: "#9fe870",
+          background: "#0052ff",
         }}
       >
         <svg width="38" height="38" viewBox="0 0 24 24" fill="none" aria-hidden="true">
           <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
-            stroke="#0e0f0c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            stroke="#ffffff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       </div>
 
       {/* title */}
-      <div style={{ fontSize: 30, color: "#0e0f0c", marginBottom: 12, fontFamily: "Manrope, Inter, system-ui, sans-serif", fontWeight: 800, letterSpacing: "-0.02em" }}>
+      <div style={{ fontSize: 30, color: "#ffffff", marginBottom: 12, fontWeight: 500, letterSpacing: "-0.02em" }}>
         의견 보내기
       </div>
 
       {/* subtitle */}
-      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#454745", maxWidth: 340, margin: "0 auto 28px" }}>
+      <div style={{ fontSize: 16, lineHeight: 1.5, color: "#a8acb3", maxWidth: 340, margin: "0 auto 28px" }}>
         쓰면서 불편한 점이나 더 있으면 좋겠는 기능을 알려주시면 빠르게 반영할게요
       </div>
 
@@ -2405,9 +2406,9 @@ function FeedbackCard({ onOpen }) {
           border: "none",
           cursor: "pointer",
           fontSize: 16,
-          fontWeight: 700,
-          color: "#0e0f0c",
-          background: hover ? "#cdffad" : "#9fe870",
+          fontWeight: 600,
+          color: "#ffffff",
+          background: hover ? "#003ecc" : "#0052ff",
           transition: "all .18s ease",
         }}
       >
