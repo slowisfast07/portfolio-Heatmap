@@ -4,8 +4,9 @@ import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis
 import {
   Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
   Image as ImageIcon, FileText, LayoutGrid, PieChart as PieIcon,
-  User, LogOut, Lock, Bell, ChevronRight, Mail, ShieldCheck, Link2,
+  User, LogOut, Lock, Bell, ChevronRight, Mail, ShieldCheck, Link2, Cloud,
 } from "lucide-react";
+import { supabase, supabaseEnabled, normUser, loadCloud, saveCloud } from "./supabase.js";
 
 /* ------------------------------------------------------------------ *
  *  MVP CONFIG  (edit these few lines for your launch)                 *
@@ -827,12 +828,34 @@ export default function App() {
   const [previewMode, setPreviewMode] = useState(false);
   const [preBackup, setPreBackup] = useState(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
-  /* demo account (client-side only, no backend yet) */
-  const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("ph_user") || "null"); } catch { return null; } });
+  /* account — real Supabase session when configured, else local/demo */
+  const [user, setUser] = useState(() => { if (supabaseEnabled) return null; try { return JSON.parse(localStorage.getItem("ph_user") || "null"); } catch { return null; } });
   const [authView, setAuthView] = useState(null); // "login" | "mypage" | null
-  useEffect(() => { try { user ? localStorage.setItem("ph_user", JSON.stringify(user)) : localStorage.removeItem("ph_user"); } catch { /* ignore */ } }, [user]);
-  const login = (u) => { setUser(u); setAuthView("mypage"); };
-  const logout = () => { setUser(null); setAuthView(null); };
+  // demo: persist the user locally. (real users come from the Supabase session, not localStorage)
+  useEffect(() => { if (supabaseEnabled) return; try { user ? localStorage.setItem("ph_user", JSON.stringify(user)) : localStorage.removeItem("ph_user"); } catch { /* ignore */ } }, [user]);
+  // real session: hydrate + keep in sync with Supabase auth
+  useEffect(() => {
+    if (!supabaseEnabled) return;
+    supabase.auth.getSession().then(({ data }) => { if (data?.session?.user) setUser(normUser(data.session.user)); });
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ? normUser(session.user) : null);
+      if (event === "SIGNED_OUT") setAuthView(null);
+    });
+    return () => sub?.subscription?.unsubscribe();
+  }, []);
+  const demoLogin = (u) => { setUser(u); setAuthView("mypage"); };
+  const logout = async () => { if (supabaseEnabled) { try { await supabase.auth.signOut(); } catch { /* ignore */ } } setUser(null); setAuthView(null); };
+  const updateAccount = useCallback(async (patch) => {
+    setUser((u) => (u ? { ...u, ...patch } : u)); // optimistic
+    if (supabaseEnabled && user?.id) {
+      const payload = {}; const meta = {};
+      if (patch.name !== undefined) meta.name = patch.name;
+      if (patch.nickname !== undefined) meta.nickname = patch.nickname;
+      if (Object.keys(meta).length) payload.data = meta;
+      if (patch.email && patch.email !== user.email) payload.email = patch.email;
+      if (Object.keys(payload).length) { try { await supabase.auth.updateUser(payload); } catch (e) { console.warn(e); } }
+    }
+  }, [user]);
 
   useEffect(() => {
     (async () => {
@@ -862,6 +885,49 @@ export default function App() {
   useEffect(() => {
     if (hydrated && !previewMode) { persist({ holdings, cash, goal, targets, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced } }); setSavedAt(Date.now()); }
   }, [holdings, cash, goal, targets, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced, hydrated, previewMode]);
+
+  /* ---- cloud sync (Supabase) — only when configured + signed in ---- */
+  const cloudReady = useRef(false);
+  const applyLoaded = useCallback((d) => {
+    if (!d) return;
+    if (Array.isArray(d.holdings)) setHoldings(d.holdings.map((h) => ({ avgCost: null, buyDate: null, ...h })));
+    if (Array.isArray(d.cash)) setCash(d.cash);
+    if (d.goal !== undefined) setGoal(d.goal);
+    if (d.targets) setTargets(d.targets);
+    if (Array.isArray(d.snapshots)) setSnapshots(d.snapshots);
+    const x = d.settings || {};
+    if (x.themeName) setThemeName(x.themeName);
+    if (x.displayCur) setDisplayCur(x.displayCur);
+    if (x.heatMode) setHeatMode(x.heatMode);
+    if (x.capChange != null) setCapChange(x.capChange);
+    if (x.capReturn != null) setCapReturn(x.capReturn);
+    if (x.showPct != null) setShowPct(x.showPct);
+    if (x.labelMode) setLabelMode(x.labelMode);
+    if (x.portfolioCollapsed != null) setPortfolioCollapsed(x.portfolioCollapsed);
+    if (x.advanced != null) setAdvanced(x.advanced);
+  }, []);
+  const snapState = () => ({ holdings, cash, goal, targets, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced } });
+  // on sign-in: pull the user's cloud portfolio (cloud wins if it has data; otherwise seed from local)
+  useEffect(() => {
+    if (!supabaseEnabled || !user?.id || !hydrated) { cloudReady.current = false; return; }
+    let cancelled = false; cloudReady.current = false;
+    loadCloud(user.id).then((row) => {
+      if (cancelled) return;
+      if (row && Array.isArray(row.holdings) && row.holdings.some((h) => h.ticker)) applyLoaded(row);
+      else saveCloud(user.id, snapState());
+      cloudReady.current = true;
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, hydrated]);
+  // push local edits up (debounced)
+  useEffect(() => {
+    if (!supabaseEnabled || !user?.id || !hydrated || previewMode || !cloudReady.current) return;
+    const data = snapState();
+    const t = setTimeout(() => { saveCloud(user.id, data); setSavedAt(Date.now()); }, 1500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [holdings, cash, goal, targets, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced, user?.id, hydrated, previewMode]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -1421,8 +1487,8 @@ export default function App() {
       </div>
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
       {feedbackOpen && <FeedbackModal th={th} onClose={() => setFeedbackOpen(false)} />}
-      {authView === "login" && <AuthScreen th={th} onClose={() => setAuthView(null)} onLogin={login} />}
-      {authView === "mypage" && user && <MyPage th={th} user={user} onClose={() => setAuthView(null)} onLogout={logout} onUpdate={(patch) => setUser((u) => ({ ...u, ...patch }))} />}
+      {authView === "login" && <AuthScreen th={th} onClose={() => setAuthView(null)} onDemoLogin={demoLogin} onAuthed={() => setAuthView("mypage")} />}
+      {authView === "mypage" && user && <MyPage th={th} user={user} onClose={() => setAuthView(null)} onLogout={logout} onUpdate={updateAccount} />}
       <MobileTabBar th={th} />
     </div>
   );
@@ -2666,21 +2732,57 @@ function FeedbackCard({ onOpen }) {
 }
 
 /* ------------------------------------------------------------------ *
- *  ACCOUNT (demo shell — no real backend auth yet)                    *
+ *  ACCOUNT (Supabase auth when configured, local demo otherwise)       *
  * ------------------------------------------------------------------ */
-function AuthScreen({ th, onClose, onLogin }) {
+function translateAuthError(m) {
+  m = (m || "").toLowerCase();
+  if (m.includes("invalid login")) return "이메일 또는 비밀번호가 올바르지 않아요.";
+  if (m.includes("already registered") || m.includes("already been")) return "이미 가입된 이메일이에요. 로그인해 주세요.";
+  if (m.includes("password") && (m.includes("6") || m.includes("short") || m.includes("weak"))) return "비밀번호는 6자 이상이어야 해요.";
+  if (m.includes("not confirmed") || (m.includes("email") && m.includes("confirm"))) return "이메일 확인이 필요해요. 메일함을 확인해 주세요.";
+  if (m.includes("rate limit")) return "잠시 후 다시 시도해 주세요.";
+  return "처리에 실패했어요. 다시 시도해 주세요.";
+}
+function AuthScreen({ th, onClose, onDemoLogin, onAuthed }) {
   const [tab, setTab] = useState("login"); // login | signup
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
-  const submit = () => {
-    const em = email.trim() || "demo@portfolio.app";
-    const nm = (tab === "signup" ? name.trim() : "") || em.split("@")[0] || "투자자";
-    onLogin({ name: nm, email: em, joined: new Date().toISOString().slice(0, 10) });
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const submit = async () => {
+    setErr(""); setNote("");
+    if (!supabaseEnabled) {
+      const em = email.trim() || "demo@portfolio.app";
+      const nm = (tab === "signup" ? name.trim() : "") || em.split("@")[0] || "투자자";
+      onDemoLogin({ name: nm, email: em, joined: new Date().toISOString().slice(0, 10), demo: true });
+      return;
+    }
+    if (!email.trim() || !pw) { setErr("이메일과 비밀번호를 입력해 주세요."); return; }
+    setBusy(true);
+    try {
+      if (tab === "signup") {
+        const { data, error } = await supabase.auth.signUp({ email: email.trim(), password: pw, options: { data: { name: name.trim() || email.trim().split("@")[0] } } });
+        if (error) setErr(translateAuthError(error.message));
+        else if (data.session) onAuthed();
+        else setNote("확인 메일을 보냈어요. 메일의 링크를 눌러 가입을 완료해 주세요.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: pw });
+        if (error) setErr(translateAuthError(error.message)); else onAuthed();
+      }
+    } catch { setErr("문제가 발생했어요. 잠시 후 다시 시도해 주세요."); }
+    setBusy(false);
   };
-  const inp = (props) => <input {...props} style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 12, padding: "12px 14px", fontSize: 14, fontFamily: "inherit" }} />;
+  const oauth = async (provider) => {
+    setErr(""); setNote("");
+    if (!supabaseEnabled) { onDemoLogin({ name: provider === "google" ? "Google 사용자" : "Apple 사용자", email: `${provider}@demo.app`, joined: new Date().toISOString().slice(0, 10), demo: true }); return; }
+    try { await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } }); }
+    catch { setErr("소셜 로그인에 실패했어요."); }
+  };
+  const inp = (props) => <input {...props} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 12, padding: "12px 14px", fontSize: 14, fontFamily: "inherit" }} />;
   const field = (label, node) => <label style={{ display: "block", marginBottom: 12 }}><span style={{ display: "block", fontSize: 12.5, color: th.textDim, marginBottom: 6, fontWeight: 600 }}>{label}</span>{node}</label>;
-  const social = (label) => <button className="ph-btn" onClick={submit} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", background: "transparent", color: th.text, border: `1px solid ${th.border}`, borderRadius: 9999, padding: "12px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>;
+  const social = (label, provider) => <button className="ph-btn" onClick={() => oauth(provider)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", background: "transparent", color: th.text, border: `1px solid ${th.border}`, borderRadius: 9999, padding: "12px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
       <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(420px,100%)", maxHeight: "94vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 20, padding: "20px 26px 28px", boxShadow: th.cardShadow }}>
@@ -2698,11 +2800,13 @@ function AuthScreen({ th, onClose, onLogin }) {
         {tab === "signup" && field("이름", inp({ value: name, onChange: (e) => setName(e.target.value), placeholder: "홍길동" }))}
         {field("이메일", inp({ type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com" }))}
         {field("비밀번호", inp({ type: "password", value: pw, onChange: (e) => setPw(e.target.value), placeholder: "••••••••" }))}
-        {tab === "login" && <div style={{ textAlign: "right", marginTop: -4, marginBottom: 14 }}><button style={{ background: "none", border: "none", color: th.accentText, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>비밀번호를 잊으셨나요?</button></div>}
-        <button className="ph-btn ph-primary" onClick={submit} style={{ ...primaryBtn(th), width: "100%", justifyContent: "center", padding: "13px", fontSize: 15 }}>{tab === "login" ? "로그인" : "가입하고 시작하기"}</button>
+        {tab === "login" && <div style={{ textAlign: "right", marginTop: -4, marginBottom: 14 }}><button onClick={async () => { setErr(""); setNote(""); if (!supabaseEnabled) { setNote("데모 모드에선 지원하지 않아요."); return; } if (!email.trim()) { setErr("이메일을 먼저 입력해 주세요."); return; } try { await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: window.location.origin }); setNote("비밀번호 재설정 메일을 보냈어요."); } catch { setErr("메일 발송에 실패했어요."); } }} style={{ background: "none", border: "none", color: th.accentText, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>비밀번호를 잊으셨나요?</button></div>}
+        {err && <div style={{ fontSize: 12.5, color: th.heatNeg, marginBottom: 12, textAlign: "center" }}>{err}</div>}
+        {note && <div style={{ fontSize: 12.5, color: th.accentText, marginBottom: 12, textAlign: "center", lineHeight: 1.5 }}>{note}</div>}
+        <button className="ph-btn ph-primary" onClick={submit} disabled={busy} style={{ ...primaryBtn(th), width: "100%", justifyContent: "center", padding: "13px", fontSize: 15, opacity: busy ? 0.7 : 1 }}>{busy ? "처리 중…" : tab === "login" ? "로그인" : "가입하고 시작하기"}</button>
         <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0", color: th.textFaint, fontSize: 12 }}><div style={{ flex: 1, height: 1, background: th.border }} />또는<div style={{ flex: 1, height: 1, background: th.border }} /></div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{social("Google로 계속하기")}{social("Apple로 계속하기")}</div>
-        <p style={{ fontSize: 11.5, color: th.textFaint, textAlign: "center", lineHeight: 1.6, marginTop: 18 }}>데모용 화면이에요 — 실제 인증은 아직 없어요. 아무 값이나 입력하고 {tab === "login" ? "로그인" : "가입"}하면 마이페이지를 둘러볼 수 있어요.</p>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{social("Google로 계속하기", "google")}{social("Apple로 계속하기", "apple")}</div>
+        {!supabaseEnabled && <p style={{ fontSize: 11.5, color: th.textFaint, textAlign: "center", lineHeight: 1.6, marginTop: 18 }}>데모 모드예요 — 아직 서버 계정이 연결되지 않았어요. 아무 값이나 입력하고 {tab === "login" ? "로그인" : "가입"}하면 마이페이지를 둘러볼 수 있어요.</p>}
       </div>
     </div>
   );
@@ -2739,6 +2843,9 @@ function MyPage({ th, user, onClose, onLogout, onUpdate }) {
             <div style={{ fontSize: 11.5, color: th.textFaint, marginTop: 2 }}>{user.joined ? `${user.joined} 가입` : "데모 계정"}</div>
           </div>
         </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: supabaseEnabled && user.id ? th.heatPos : th.textFaint, padding: "0 2px 14px" }}>
+          <Cloud size={13} />{supabaseEnabled && user.id ? "클라우드에 동기화돼요 — 어느 기기에서나 같은 포트폴리오" : "이 기기에만 저장돼요 (데모 계정)"}
+        </div>
         {editing ? (
           <div style={{ borderTop: `1px solid ${th.border}`, paddingTop: 16 }}>
             <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>회원 정보 수정</div>
@@ -2754,7 +2861,7 @@ function MyPage({ th, user, onClose, onLogout, onUpdate }) {
           <>
             <div style={{ borderTop: `1px solid ${th.border}`, paddingTop: 8 }}>
               <Row icon={User} label="회원 정보 수정" sub="이름·닉네임·이메일" onClick={() => setEditing(true)} />
-              <Row icon={Lock} label="비밀번호 변경" sub="보안을 위해 주기적으로 변경하세요" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
+              <Row icon={Lock} label="비밀번호 변경" sub={supabaseEnabled ? "재설정 메일을 보내드려요" : "보안을 위해 주기적으로 변경하세요"} onClick={async () => { if (supabaseEnabled && user.email) { try { await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: window.location.origin }); showToast("비밀번호 재설정 메일을 보냈어요"); } catch { showToast("메일 발송에 실패했어요"); } } else showToast("데모에선 준비 중인 기능이에요"); }} />
               <Row icon={Bell} label="알림 설정" sub="가격·목표 도달 알림" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
               <Row icon={Link2} label="연결된 계좌·거래소" sub="증권사/거래소 연동" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
               <Row icon={ShieldCheck} label="약관 및 개인정보 처리방침" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
