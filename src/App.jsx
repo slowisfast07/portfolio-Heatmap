@@ -1,10 +1,10 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from "react";
 import * as d3 from "d3";
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar, ReferenceLine, Customized } from "recharts";
 import {
   Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
   Image as ImageIcon, FileText, LayoutGrid, PieChart as PieIcon,
-  User, LogOut, Lock, Bell, ChevronRight, Mail, ShieldCheck, Link2, Cloud,
+  User, LogOut, Lock, Bell, ChevronRight, Mail, ShieldCheck, Link2, Cloud, GripVertical,
 } from "lucide-react";
 import { supabase, supabaseEnabled, normUser, loadCloud, saveCloud } from "./supabase.js";
 
@@ -1086,6 +1086,8 @@ export default function App() {
   const allIncluded = holdings.length > 0 && holdings.every((h) => h.included !== false);
   const toggleAllIncluded = () => { const next = !allIncluded; setHoldings((p) => p.map((h) => ({ ...h, included: next }))); };
   const removeHolding = (id) => setHoldings((p) => p.filter((h) => h.id !== id));
+  const moveHolding = (id, dir) => setHoldings((p) => { const i = p.findIndex((h) => h.id === id); const j = i + dir; if (i < 0 || j < 0 || j >= p.length) return p; const next = p.slice(); [next[i], next[j]] = [next[j], next[i]]; return next; });
+  const reorderHolding = useCallback((fromId, toId) => setHoldings((p) => { if (fromId === toId) return p; const from = p.findIndex((h) => h.id === fromId), to = p.findIndex((h) => h.id === toId); if (from < 0 || to < 0) return p; const next = p.slice(); const [moved] = next.splice(from, 1); next.splice(to, 0, moved); return next; }), []);
 
   const addCash = () => setCash((p) => [...p, { id: uid(), label: "", cur: "USD", amount: 0 }]);
   const updateCash = (id, patch) => setCash((p) => p.map((c) => (c.id === id ? { ...c, ...patch } : c)));
@@ -1436,7 +1438,7 @@ export default function App() {
           ) : (
             <>
               {showImport && <ImportPanel th={th} onImport={(rows) => { const n = importHoldings(rows); if (n) setShowImport(false); }} />}
-              <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onAutoFill={autoFill} advanced={advanced} hideAmt={hideAmt} onToggleAll={toggleAllIncluded} allIncluded={allIncluded} />
+              <PortfolioTable holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={updateHolding} onRemove={removeHolding} onMove={moveHolding} onReorder={reorderHolding} onAutoFill={autoFill} advanced={advanced} hideAmt={hideAmt} onToggleAll={toggleAllIncluded} allIncluded={allIncluded} />
               <p style={{ fontSize: 11.5, color: th.textFaint, marginTop: 12, lineHeight: 1.6 }}>
                 티커 입력 후 칸을 벗어나면 <b style={{ color: th.textDim }}>이름·섹터·지표 자동</b> 계산. 한국주식은 <b style={{ color: th.textDim }}>삼성전자</b>처럼 이름으로 넣어도 됩니다. 금·은은 <b style={{ color: th.textDim }}>현물자산</b>, 리츠는 <b style={{ color: th.textDim }}>리츠/부동산</b> 유형을 선택하세요.
                 <b style={{ color: th.textDim }}> 평단가</b>를 넣으면 "내 수익률" 히트맵이 켜집니다. <b style={{ color: th.textDim }}>심화</b>를 켜면 매수일·배당률·RSI·BB%가 보이고, 다 넣은 뒤엔 <b style={{ color: th.textDim }}>▴ 접기</b>로 정리하세요.
@@ -1562,9 +1564,10 @@ function Treemap({ leaves, th, cap, showPct, labelMode, onTile }) {
   const ref = useRef(null);
   const [w, setW] = useState(800);
   const [H, setH] = useState(560);
+  useLayoutEffect(() => { if (ref.current) setW(Math.floor(ref.current.clientWidth)); }, []); // sync first measure → no overflow flash
   useEffect(() => {
     if (!ref.current) return;
-    const ro = new ResizeObserver((e) => setW(e[0].contentRect.width));
+    const ro = new ResizeObserver((e) => setW(Math.floor(e[0].contentRect.width)));
     ro.observe(ref.current);
     return () => ro.disconnect();
   }, []);
@@ -1594,14 +1597,22 @@ function Treemap({ leaves, th, cap, showPct, labelMode, onTile }) {
       {root.leaves().map((leaf) => {
         const bw = leaf.x1 - leaf.x0, bh = leaf.y1 - leaf.y0, area = bw * bh;
         const color = heatColor(leaf.data.metric, th, cap);
-        const showLabel = area > 1300, showPctHere = showPct && area > 4200 && leaf.data.metric != null;
-        const fs = Math.max(8, Math.min(23, Math.sqrt(area) / 5.4));
         const dark = d3.hcl(color).l < 60;
         const tc = dark ? "#fff" : "#0b1015";
-        const label = labelMode === "name" && leaf.data.name ? leaf.data.name : (leaf.data.ticker || "").replace(".KS", "").replace(".KQ", "");
         const tk = leaf.data.ticker || "";
         const isKR = /\.(KS|KQ)$/i.test(tk) || /^\d{6}$/.test(tk);
-        const finalLabel = ((labelMode === "name" || isKR) && leaf.data.name) ? leaf.data.name : (tk.replace(".KS", "").replace(".KQ", "") || label);
+        const baseTk = tk.replace(".KS", "").replace(".KQ", "");
+        const wantName = (labelMode === "name" || isKR) && leaf.data.name;
+        // wide tiles show the full name; narrow tiles fall back to the short ticker so it fits fully
+        const finalLabel = (wantName && bw >= 70) ? leaf.data.name : (baseTk || leaf.data.name || "");
+        const len = Math.max(1, finalLabel.length);
+        const cjk = /[　-鿿가-힯]/.test(finalLabel);
+        // font fits BOTH area and the tile's own width — so a narrow tile shrinks its
+        // ticker to fit instead of cutting it off mid-word (e.g. MRVL on a thin column).
+        const fsByWidth = (bw - 6) / (len * (cjk ? 1.02 : 0.6));
+        const fs = Math.max(7.5, Math.min(23, Math.min(Math.sqrt(area) / 5.4, fsByWidth)));
+        const showLabel = bw >= 22 && bh >= 16 && area > 360;
+        const showPctHere = showPct && leaf.data.metric != null && bw >= 50 && bh >= 38 && area > 2600;
         return (
           <div key={leaf.data.id} className="ph-tile" title={`${leaf.data.name || leaf.data.ticker}  ${leaf.data.metric != null ? (leaf.data.metric >= 0 ? "+" : "") + fmt(leaf.data.metric) + "%" : ""} · 클릭하면 차트`}
             onClick={() => { if (onTile && leaf.data.id !== "__cash") onTile(leaf.data); }}
@@ -1668,9 +1679,32 @@ function Donut({ data, th, colorMap }) {
 /* ------------------------------------------------------------------ *
  *  TABLE                                                              *
  * ------------------------------------------------------------------ */
-function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill, advanced, hideAmt, onToggleAll, allIncluded }) {
+/* pointer-based drag-to-reorder (works with mouse AND touch). Rows/cards carry a
+   data-holding-id; while dragging we hit-test under the pointer and live-reorder. */
+function useDragSort(reorder) {
+  const [dragId, setDragId] = useState(null);
+  const dragRef = useRef(null);
+  useEffect(() => {
+    if (!dragId) return;
+    const onMove = (e) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      const row = el && el.closest("[data-holding-id]");
+      if (row) { const tid = row.getAttribute("data-holding-id"); if (tid && tid !== dragRef.current) reorder(dragRef.current, tid); }
+      if (e.cancelable) e.preventDefault();
+    };
+    const end = () => { setDragId(null); dragRef.current = null; document.body.style.overflow = ""; document.body.style.userSelect = ""; };
+    document.addEventListener("pointermove", onMove, { passive: false });
+    document.addEventListener("pointerup", end);
+    document.addEventListener("pointercancel", end);
+    return () => { document.removeEventListener("pointermove", onMove); document.removeEventListener("pointerup", end); document.removeEventListener("pointercancel", end); };
+  }, [dragId, reorder]);
+  const start = (id) => (e) => { e.preventDefault(); try { e.target.setPointerCapture?.(e.pointerId); } catch { /* ignore */ } dragRef.current = id; setDragId(id); document.body.style.overflow = "hidden"; document.body.style.userSelect = "none"; };
+  return { dragId, start };
+}
+function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onMove, onReorder, onAutoFill, advanced, hideAmt, onToggleAll, allIncluded }) {
+  const drag = useDragSort(onReorder || (() => {}));
   const mobile = useIsMobile(720);
-  if (mobile) return (<><datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist><PortfolioCards holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={onUpdate} onRemove={onRemove} onAutoFill={onAutoFill} advanced={advanced} /></>);
+  if (mobile) return (<><datalist id="ph-sectors">{SECTOR_PRESETS.map((s) => <option key={s} value={s} />)}</datalist><PortfolioCards holdings={holdings} th={th} displayCur={displayCur} valueOf={valueOf} totalAssets={totalAssets} onUpdate={onUpdate} onRemove={onRemove} onMove={onMove} onReorder={onReorder} onAutoFill={onAutoFill} advanced={advanced} /></>);
   const head = (t) => ({ textAlign: t || "left", fontSize: 10.5, fontWeight: 600, color: th.textFaint, padding: "8px 8px", textTransform: "uppercase", letterSpacing: 0.3, whiteSpace: "nowrap" });
   const cell = { padding: "6px 8px", fontSize: 12.5, borderTop: `1px solid ${th.border}` };
   return (
@@ -1684,11 +1718,12 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
           <th style={head("right")}>일간%</th>{advanced && <th style={head("right")} title="RSI(14)">RSI</th>}{advanced && <th style={head("right")} title="볼린저밴드 위치 (20일, 2σ) — %B">BB%</th>}<th style={head("right")}>수익률%</th><th style={head("right")}>평가액 ({displayCur})</th><th style={head("right")}>비중</th><th style={head("center")}></th>
         </tr></thead>
         <tbody>
-          {holdings.map((h) => {
+          {holdings.map((h, idx) => {
             const v = valueOf(h), wpct = totalAssets ? (v / totalAssets) * 100 : 0, ret = returnPct(h);
             const off = h.included === false;
+            const dragging = drag.dragId === h.id;
             return (
-              <tr key={h.id} className="ph-row" style={{ opacity: off ? 0.42 : 1 }}>
+              <tr key={h.id} data-holding-id={h.id} className="ph-row" style={{ opacity: dragging ? 0.55 : off ? 0.42 : 1, background: dragging ? th.rowHover : undefined }}>
                 <td style={{ ...cell, textAlign: "center" }}><input type="checkbox" checked={!off} onChange={(e) => onUpdate(h.id, { included: e.target.checked })} style={{ accentColor: th.accent, cursor: "pointer", width: 15, height: 15 }} title={off ? "집계에서 제외됨 — 체크하면 포함" : "집계·히트맵에 포함됨"} /></td>
                 <td style={cell}><select value={h.type} onChange={(e) => onUpdate(h.id, typeChangePatch(e.target.value, h.sector, h.cur))} style={selStyle(th, 92)}>{TYPE_OPTIONS}</select></td>
                 <td style={cell}><TickerInput th={th} value={h.ticker} type={h.type} width={92} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : h.type === "commodity" ? "금 / GC=F" : h.type === "reit" ? "O / 맥쿼리인프라" : "AAPL"}
@@ -1715,7 +1750,14 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                 <td className="num" style={{ ...cell, textAlign: "right", color: ret == null ? th.textFaint : ret >= 0 ? th.heatPos : th.heatNeg, fontWeight: 700 }}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}`}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{hideAmt ? "••••" : fmtMoney(v, displayCur)}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: th.textDim }}>{fmt(wpct, 1)}%</td>
-                <td style={{ ...cell, textAlign: "center" }}><button className="ph-btn" onClick={() => onRemove(h.id)} aria-label="종목 삭제" style={{ ...iconBtn(th), width: 34, height: 34, color: th.heatNeg }}><Trash2 size={15} /></button></td>
+                <td style={{ ...cell, textAlign: "center", whiteSpace: "nowrap" }}>
+                  {onReorder && <span onPointerDown={drag.start(h.id)} title="드래그해서 순서 변경" style={{ display: "inline-flex", verticalAlign: "middle", marginRight: 2, color: th.textFaint, cursor: "grab", touchAction: "none" }}><GripVertical size={15} /></span>}
+                  {onMove && <span style={{ display: "inline-flex", flexDirection: "column", verticalAlign: "middle", marginRight: 4 }}>
+                    <button className="ph-btn" disabled={idx === 0} onClick={() => onMove(h.id, -1)} aria-label="위로" title="위로" style={{ background: "transparent", border: "none", color: idx === 0 ? th.textFaint : th.textDim, cursor: idx === 0 ? "default" : "pointer", fontSize: 11, lineHeight: 1, padding: "1px 4px", opacity: idx === 0 ? 0.4 : 1 }}>▲</button>
+                    <button className="ph-btn" disabled={idx === holdings.length - 1} onClick={() => onMove(h.id, 1)} aria-label="아래로" title="아래로" style={{ background: "transparent", border: "none", color: idx === holdings.length - 1 ? th.textFaint : th.textDim, cursor: idx === holdings.length - 1 ? "default" : "pointer", fontSize: 11, lineHeight: 1, padding: "1px 4px", opacity: idx === holdings.length - 1 ? 0.4 : 1 }}>▼</button>
+                  </span>}
+                  <button className="ph-btn" onClick={() => onRemove(h.id)} aria-label="종목 삭제" style={{ ...iconBtn(th), width: 34, height: 34, color: th.heatNeg, verticalAlign: "middle" }}><Trash2 size={15} /></button>
+                </td>
               </tr>
             );
           })}
@@ -2572,17 +2614,20 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
 }
 
 /* mobile card view for holdings (#10) */
-function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onAutoFill, advanced }) {
+function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpdate, onRemove, onMove, onReorder, onAutoFill, advanced }) {
+  const drag = useDragSort(onReorder || (() => {}));
   if (!holdings.length) return <div style={{ textAlign: "center", color: th.textFaint, padding: 24, fontSize: 13 }}>"종목 추가"를 눌러 입력하세요</div>;
   const fld = (label, node) => <div style={{ display: "flex", flexDirection: "column", gap: 3 }}><span style={{ fontSize: 10, color: th.textFaint, fontWeight: 600 }}>{label}</span>{node}</div>;
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      {holdings.map((h) => {
+      {holdings.map((h, idx) => {
         const v = valueOf(h), wpct = totalAssets ? (v / totalAssets) * 100 : 0, ret = returnPct(h);
         const metric = (label, val, color) => <div style={{ display: "flex", flexDirection: "column", gap: 2 }}><span style={{ fontSize: 10, color: th.textFaint }}>{label}</span><span className="num" style={{ fontSize: 12.5, fontWeight: 700, color: color || th.text }}>{val}</span></div>;
+        const dragging = drag.dragId === h.id;
         return (
-          <div key={h.id} className="ph-card" style={{ border: `1px solid ${th.border}`, borderRadius: 16, padding: 13, background: th.panel, opacity: h.included === false ? 0.5 : 1 }}>
+          <div key={h.id} data-holding-id={h.id} className="ph-card" style={{ border: `1px solid ${dragging ? th.accent : th.border}`, borderRadius: 16, padding: 13, background: dragging ? th.rowHover : th.panel, opacity: dragging ? 0.7 : h.included === false ? 0.5 : 1 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
+              {onReorder && <span onPointerDown={drag.start(h.id)} title="드래그해서 순서 변경" style={{ display: "inline-flex", color: th.textFaint, cursor: "grab", touchAction: "none", flexShrink: 0, padding: "2px 1px" }}><GripVertical size={18} /></span>}
               <input type="checkbox" checked={h.included !== false} onChange={(e) => onUpdate(h.id, { included: e.target.checked })} style={{ accentColor: th.accent, cursor: "pointer", width: 18, height: 18, flexShrink: 0 }} title="집계·히트맵 포함" />
               <div style={{ flex: 1 }}>
                 <TickerInput th={th} value={h.ticker} type={h.type} width={110} placeholder={h.type === "kr" ? "삼성전자" : h.type === "crypto" ? "BTC" : h.type === "commodity" ? "금 / GC=F" : h.type === "reit" ? "O / 맥쿼리인프라" : "AAPL"}
@@ -2590,6 +2635,10 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                   onPick={(sym) => { const s = (sym || h.ticker || "").toUpperCase(); if (s !== h.ticker) onUpdate(h.id, { ticker: s, live: false }); onAutoFill(h.id, s, h.type); }} />
               </div>
               <select value={h.type} onChange={(e) => onUpdate(h.id, typeChangePatch(e.target.value, h.sector, h.cur))} style={selStyle(th, 96)}>{TYPE_OPTIONS}</select>
+              {onMove && <div style={{ display: "flex", flexDirection: "column", flexShrink: 0 }}>
+                <button className="ph-btn" disabled={idx === 0} onClick={() => onMove(h.id, -1)} aria-label="위로" style={{ background: "transparent", border: "none", color: th.textDim, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "4px 6px", opacity: idx === 0 ? 0.3 : 1 }}>▲</button>
+                <button className="ph-btn" disabled={idx === holdings.length - 1} onClick={() => onMove(h.id, 1)} aria-label="아래로" style={{ background: "transparent", border: "none", color: th.textDim, cursor: "pointer", fontSize: 13, lineHeight: 1, padding: "4px 6px", opacity: idx === holdings.length - 1 ? 0.3 : 1 }}>▼</button>
+              </div>}
               <button className="ph-btn" onClick={() => onRemove(h.id)} aria-label="종목 삭제" style={{ ...iconBtn(th), width: 44, height: 44, flexShrink: 0, color: th.heatNeg }}><Trash2 size={17} /></button>
             </div>
             <input value={h.name} placeholder="이름 (자동)" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={{ ...inpStyle(th, 0), width: "100%", marginBottom: 8 }} />
@@ -2812,14 +2861,17 @@ function AuthScreen({ th, onClose, onDemoLogin, onAuthed }) {
   );
 }
 
+const TITLE = { main: "마이페이지", edit: "회원 정보 수정", notify: "알림 설정", connections: "연결된 계좌·거래소", legal: "약관 및 개인정보" };
 function MyPage({ th, user, onClose, onLogout, onUpdate }) {
-  const [editing, setEditing] = useState(false);
+  const [view, setView] = useState("main"); // main | edit | notify | connections | legal
   const [name, setName] = useState(user.name || "");
   const [nickname, setNickname] = useState(user.nickname || "");
   const [email, setEmail] = useState(user.email || "");
   const [toast, setToast] = useState("");
-  const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 1800); };
-  const save = () => { onUpdate({ name: name.trim() || user.name, nickname: nickname.trim(), email: email.trim() || user.email }); setEditing(false); showToast("회원 정보가 저장됐어요"); };
+  const [notif, setNotif] = useState(() => { try { return { price: true, goal: true, daily: false, email: false, ...JSON.parse(localStorage.getItem("ph_notif") || "{}") }; } catch { return { price: true, goal: true, daily: false, email: false }; } });
+  const setN = (k, v) => setNotif((p) => { const next = { ...p, [k]: v }; try { localStorage.setItem("ph_notif", JSON.stringify(next)); } catch { /* ignore */ } return next; });
+  const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 1900); };
+  const save = () => { onUpdate({ name: name.trim() || user.name, nickname: nickname.trim(), email: email.trim() || user.email }); setView("main"); showToast("회원 정보가 저장됐어요"); };
   const inp = (props) => <input {...props} style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 12, padding: "11px 13px", fontSize: 14, fontFamily: "inherit" }} />;
   const fld = (label, node) => <label style={{ display: "block", marginBottom: 12 }}><span style={{ display: "block", fontSize: 12, color: th.textDim, marginBottom: 6, fontWeight: 600 }}>{label}</span>{node}</label>;
   const Row = ({ icon: Icon, label, sub, danger, onClick }) => (
@@ -2829,49 +2881,107 @@ function MyPage({ th, user, onClose, onLogout, onUpdate }) {
       <ChevronRight size={17} color={th.textFaint} />
     </button>
   );
+  const Toggle = ({ on, onChange }) => (
+    <button onClick={() => onChange(!on)} aria-pressed={on} style={{ width: 46, height: 27, borderRadius: 9999, background: on ? th.accent : th.panelAlt, border: `1px solid ${on ? th.accent : th.border}`, position: "relative", cursor: "pointer", flexShrink: 0, transition: "background .15s", padding: 0 }}>
+      <span style={{ position: "absolute", top: 2, left: on ? 21 : 2, width: 21, height: 21, borderRadius: 9999, background: "#fff", transition: "left .15s" }} />
+    </button>
+  );
+  const NotifRow = ({ k, label, sub }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 4px", borderBottom: `1px solid ${th.border}` }}>
+      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 600 }}>{label}</div><div style={{ fontSize: 12, color: th.textFaint, marginTop: 1 }}>{sub}</div></div>
+      <Toggle on={!!notif[k]} onChange={(v) => setN(k, v)} />
+    </div>
+  );
+  const BrokerRow = ({ name: bn, kind }) => (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 4px", borderBottom: `1px solid ${th.border}` }}>
+      <span style={{ width: 34, height: 34, borderRadius: 9999, background: avatarColor(bn), display: "grid", placeItems: "center", color: "#fff", fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{bn[0]}</span>
+      <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 14, fontWeight: 600 }}>{bn}</div><div style={{ fontSize: 11.5, color: th.textFaint }}>{kind}</div></div>
+      <span style={{ fontSize: 11, fontWeight: 700, color: th.textDim, background: th.panelAlt, padding: "4px 10px", borderRadius: 9999 }}>준비 중</span>
+    </div>
+  );
+  const back = () => setView("main");
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
       <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(480px,100%)", maxHeight: "94vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 20, padding: "20px 22px 26px", boxShadow: th.cardShadow }}>
-        <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
-          <div style={{ fontSize: 18, ...DISP }}>마이페이지</div><div style={{ flex: 1 }} /><button className="ph-btn" onClick={onClose} aria-label="닫기" style={iconBtn(th)}>✕</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+          {view !== "main" && <button className="ph-btn" onClick={back} aria-label="뒤로" style={{ ...iconBtn(th), width: 32, height: 32 }}>‹</button>}
+          <div style={{ fontSize: 18, ...DISP }}>{TITLE[view]}</div><div style={{ flex: 1 }} /><button className="ph-btn" onClick={onClose} aria-label="닫기" style={iconBtn(th)}>✕</button>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "4px 2px 18px" }}>
-          <div style={{ width: 60, height: 60, borderRadius: 9999, background: avatarColor(user.email || user.name), display: "grid", placeItems: "center", color: "#fff", fontSize: 26, fontWeight: 700, flexShrink: 0 }}>{initials(user.name || user.email)}</div>
-          <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 600, color: th.text }}>{user.nickname || user.name}</div>
-            <div style={{ fontSize: 13, color: th.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
-            <div style={{ fontSize: 11.5, color: th.textFaint, marginTop: 2 }}>{user.joined ? `${user.joined} 가입` : "데모 계정"}</div>
+
+        {view === "main" && (<>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "4px 2px 18px" }}>
+            <div style={{ width: 60, height: 60, borderRadius: 9999, background: avatarColor(user.email || user.name), display: "grid", placeItems: "center", color: "#fff", fontSize: 26, fontWeight: 700, flexShrink: 0 }}>{initials(user.name || user.email)}</div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 18, fontWeight: 600, color: th.text }}>{user.nickname || user.name}</div>
+              <div style={{ fontSize: 13, color: th.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
+              <div style={{ fontSize: 11.5, color: th.textFaint, marginTop: 2 }}>{user.joined ? `${user.joined} 가입` : "데모 계정"}</div>
+            </div>
           </div>
-        </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: supabaseEnabled && user.id ? th.heatPos : th.textFaint, padding: "0 2px 14px" }}>
-          <Cloud size={13} />{supabaseEnabled && user.id ? "클라우드에 동기화돼요 — 어느 기기에서나 같은 포트폴리오" : "이 기기에만 저장돼요 (데모 계정)"}
-        </div>
-        {editing ? (
-          <div style={{ borderTop: `1px solid ${th.border}`, paddingTop: 16 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>회원 정보 수정</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11.5, color: supabaseEnabled && user.id ? th.heatPos : th.textFaint, padding: "0 2px 14px" }}>
+            <Cloud size={13} />{supabaseEnabled && user.id ? "클라우드에 동기화돼요 — 어느 기기에서나 같은 포트폴리오" : "이 기기에만 저장돼요 (데모 계정)"}
+          </div>
+          <div style={{ borderTop: `1px solid ${th.border}`, paddingTop: 8 }}>
+            <Row icon={User} label="회원 정보 수정" sub="이름·닉네임·이메일" onClick={() => setView("edit")} />
+            <Row icon={Lock} label="비밀번호 변경" sub={supabaseEnabled ? "재설정 메일을 보내드려요" : "보안을 위해 주기적으로 변경하세요"} onClick={async () => { if (supabaseEnabled && user.email) { try { await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: window.location.origin }); showToast("비밀번호 재설정 메일을 보냈어요"); } catch { showToast("메일 발송에 실패했어요"); } } else showToast("데모에선 준비 중인 기능이에요"); }} />
+            <Row icon={Bell} label="알림 설정" sub="가격·목표 도달 알림" onClick={() => setView("notify")} />
+            <Row icon={Link2} label="연결된 계좌·거래소" sub="증권사/거래소 연동" onClick={() => setView("connections")} />
+            <Row icon={ShieldCheck} label="약관 및 개인정보 처리방침" onClick={() => setView("legal")} />
+          </div>
+          <div style={{ borderTop: `1px solid ${th.border}`, marginTop: 10, paddingTop: 10 }}>
+            <Row icon={LogOut} label="로그아웃" onClick={onLogout} />
+            <Row icon={Trash2} label="회원 탈퇴" danger onClick={() => showToast(supabaseEnabled ? "회원 탈퇴는 고객센터로 문의해 주세요" : "데모에선 탈퇴가 비활성화돼 있어요")} />
+          </div>
+        </>)}
+
+        {view === "edit" && (
+          <div style={{ paddingTop: 4 }}>
             {fld("이름", inp({ value: name, onChange: (e) => setName(e.target.value) }))}
             {fld("닉네임 (표시 이름)", inp({ value: nickname, onChange: (e) => setNickname(e.target.value), placeholder: "선택" }))}
             {fld("이메일", inp({ type: "email", value: email, onChange: (e) => setEmail(e.target.value) }))}
+            {supabaseEnabled && email.trim() !== (user.email || "") && <div style={{ fontSize: 11.5, color: th.textFaint, marginTop: -4, marginBottom: 12 }}>이메일을 바꾸면 확인 메일이 발송돼요.</div>}
             <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
               <button className="ph-btn ph-primary" onClick={save} style={{ ...primaryBtn(th), flex: 1, justifyContent: "center" }}>저장</button>
-              <button className="ph-btn" onClick={() => setEditing(false)} style={{ ...secondaryBtn(th), flex: 1, justifyContent: "center" }}>취소</button>
+              <button className="ph-btn" onClick={back} style={{ ...secondaryBtn(th), flex: 1, justifyContent: "center" }}>취소</button>
             </div>
           </div>
-        ) : (
-          <>
-            <div style={{ borderTop: `1px solid ${th.border}`, paddingTop: 8 }}>
-              <Row icon={User} label="회원 정보 수정" sub="이름·닉네임·이메일" onClick={() => setEditing(true)} />
-              <Row icon={Lock} label="비밀번호 변경" sub={supabaseEnabled ? "재설정 메일을 보내드려요" : "보안을 위해 주기적으로 변경하세요"} onClick={async () => { if (supabaseEnabled && user.email) { try { await supabase.auth.resetPasswordForEmail(user.email, { redirectTo: window.location.origin }); showToast("비밀번호 재설정 메일을 보냈어요"); } catch { showToast("메일 발송에 실패했어요"); } } else showToast("데모에선 준비 중인 기능이에요"); }} />
-              <Row icon={Bell} label="알림 설정" sub="가격·목표 도달 알림" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
-              <Row icon={Link2} label="연결된 계좌·거래소" sub="증권사/거래소 연동" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
-              <Row icon={ShieldCheck} label="약관 및 개인정보 처리방침" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
-            </div>
-            <div style={{ borderTop: `1px solid ${th.border}`, marginTop: 10, paddingTop: 10 }}>
-              <Row icon={LogOut} label="로그아웃" onClick={onLogout} />
-              <Row icon={Trash2} label="회원 탈퇴" danger onClick={() => showToast("데모에선 탈퇴가 비활성화돼 있어요")} />
-            </div>
-          </>
         )}
+
+        {view === "notify" && (
+          <div style={{ paddingTop: 4 }}>
+            <div style={{ fontSize: 12.5, color: th.textFaint, lineHeight: 1.6, marginBottom: 8 }}>받고 싶은 알림을 선택하세요. 설정은 자동 저장돼요.</div>
+            <NotifRow k="price" label="가격 급변동 알림" sub="보유 종목이 크게 움직일 때" />
+            <NotifRow k="goal" label="목표 도달 알림" sub="목표 자산·배분에 도달하면" />
+            <NotifRow k="daily" label="일간 요약" sub="매일 장 마감 후 내 포트폴리오 요약" />
+            <NotifRow k="email" label="이메일로도 받기" sub="앱 알림과 함께 메일 발송" />
+            <div style={{ fontSize: 11.5, color: th.textFaint, lineHeight: 1.6, marginTop: 14, background: th.panelAlt, borderRadius: 12, padding: "12px 14px" }}>
+              💡 실제 푸시·이메일 발송은 곧 연결될 예정이에요. 지금은 알림 받을 항목을 미리 저장해 둘 수 있어요.
+            </div>
+          </div>
+        )}
+
+        {view === "connections" && (
+          <div style={{ paddingTop: 4 }}>
+            <div style={{ fontSize: 12.5, color: th.textFaint, lineHeight: 1.6, marginBottom: 10 }}>증권사·거래소 <b style={{ color: th.textDim }}>자동 연동</b>은 준비 중이에요. 지금은 <b style={{ color: th.text }}>포트폴리오 탭의 "가져오기"</b>에서 CSV 붙여넣기·스크린샷으로 한 번에 불러올 수 있어요.</div>
+            <BrokerRow name="토스증권" kind="국내 주식" />
+            <BrokerRow name="키움증권" kind="국내·해외 주식" />
+            <BrokerRow name="미래에셋증권" kind="국내·해외 주식" />
+            <BrokerRow name="삼성증권" kind="국내·해외 주식" />
+            <BrokerRow name="업비트" kind="크립토" />
+            <BrokerRow name="바이낸스" kind="크립토" />
+            <button className="ph-btn" onClick={() => showToast("출시되면 알림으로 알려드릴게요")} style={{ ...secondaryBtn(th), width: "100%", justifyContent: "center", marginTop: 14 }}>연동 출시되면 알림 받기</button>
+          </div>
+        )}
+
+        {view === "legal" && (
+          <div style={{ paddingTop: 4, fontSize: 12.5, color: th.textDim, lineHeight: 1.75 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: th.text, margin: "4px 0 6px" }}>서비스 이용약관 (요약)</div>
+            <p style={{ margin: "0 0 14px" }}>· 본 서비스는 보유 자산을 직접 입력·관리해 한눈에 보여주는 <b style={{ color: th.text }}>개인용 포트폴리오 시각화 도구</b>입니다.<br />· 표시되는 시세·지표는 외부 데이터(야후 파이낸스 등)를 기반으로 하며, <b style={{ color: th.text }}>지연·오차가 있을 수 있습니다.</b><br />· 본 서비스는 <b style={{ color: th.text }}>투자 자문·권유가 아니며</b>, 모든 투자 판단과 책임은 이용자 본인에게 있습니다.<br />· 서비스는 사전 고지 후 변경·중단될 수 있습니다.</p>
+            <div style={{ fontSize: 14, fontWeight: 600, color: th.text, margin: "4px 0 6px" }}>개인정보 처리방침 (요약)</div>
+            <p style={{ margin: "0 0 14px" }}>· 수집 항목: 이메일·이름(계정), 그리고 이용자가 입력한 보유 종목·수량·평단가 등 <b style={{ color: th.text }}>포트폴리오 데이터</b>.<br />· 이용 목적: 로그인 인증과 기기 간 동기화 제공.<br />· 보관: 클라우드 동기화 사용 시 Supabase에 저장되며, <b style={{ color: th.text }}>본인만 접근 가능</b>하도록 행 단위 보안(RLS)이 적용됩니다. 미사용 시 데이터는 이 기기에만 저장됩니다.<br />· 삭제: 로그아웃·회원 탈퇴 또는 데이터 초기화로 언제든 삭제할 수 있습니다.<br />· 제3자에게 판매·공유하지 않습니다.</p>
+            <p style={{ margin: 0, color: th.textFaint }}>문의: {CONFIG.feedbackEmail}</p>
+          </div>
+        )}
+
         {toast && <div style={{ position: "fixed", left: "50%", bottom: 34, transform: "translateX(-50%)", background: th.text, color: th.bg, fontSize: 13, fontWeight: 600, padding: "10px 18px", borderRadius: 9999, zIndex: 99, boxShadow: th.cardShadow }}>{toast}</div>}
       </div>
     </div>
