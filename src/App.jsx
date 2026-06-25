@@ -3,7 +3,7 @@ import * as d3 from "d3";
 import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, BarChart, Bar, ReferenceLine, Customized } from "recharts";
 import {
   Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
-  Image as ImageIcon, FileText,
+  Image as ImageIcon, FileText, LayoutGrid, PieChart as PieIcon,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ *
@@ -465,16 +465,28 @@ async function parseScreenshot(image, media_type) {
   return [];
 }
 
-/* minimal CSV/TSV parser: ticker, qty, avgCost[, currency] per line */
+/* strip thousands separators / currency symbols / units, then parse → number|null */
+function cleanNum(s) {
+  if (s == null) return null;
+  const t = String(s).replace(/[,\s₩$￦원주개%]/g, "").replace(/[^0-9.\-]/g, "");
+  if (t === "" || t === "-" || t === ".") return null;
+  const n = parseFloat(t);
+  return isNaN(n) ? null : n;
+}
+/* flexible CSV/TSV parser: ticker, qty, avgCost[, currency] per line. Prefers tab/semicolon
+   (so thousands-commas survive); falls back to 2+ spaces, then single comma. Currency is
+   inferred from a ₩/원/$/USD token anywhere on the line. Header/junk lines (no numeric qty)
+   are skipped. */
 function parseCSV(text) {
   const rows = [];
   (text || "").trim().split(/\r?\n/).forEach((line) => {
     if (!line.trim()) return;
-    const p = line.split(/[,\t]/).map((s) => s.trim());
+    let p = (/\t|;/.test(line) ? line.split(/[\t;]/) : /,/.test(line) ? line.split(",") : line.split(/\s{2,}/)).map((s) => s.trim()).filter(Boolean);
     if (p.length < 2) return;
-    if (isNaN(parseFloat(p[1]))) return; // header / junk
-    const cur = /KRW|won|원|₩/i.test(p[3] || "") ? "KRW" : /USD|\$/i.test(p[3] || "") ? "USD" : undefined;
-    rows.push({ ticker: p[0], qty: parseFloat(p[1]), avgCost: p[2] != null && p[2] !== "" && !isNaN(parseFloat(p[2])) ? parseFloat(p[2]) : null, cur });
+    const qty = cleanNum(p[1]);
+    if (qty == null) return; // header / junk
+    const cur = /KRW|won|원|₩|￦/i.test(line) ? "KRW" : /USD|\$/i.test(line) ? "USD" : undefined;
+    rows.push({ ticker: p[0], qty, avgCost: cleanNum(p[2]), cur });
   });
   return rows;
 }
@@ -540,6 +552,19 @@ function closeAt(series, t) {
     else if (series.ts[i] > t) break;
   }
   return v;
+}
+/* value of all positions (USD) at a past timestamp, from each holding's price history.
+   Used for period returns (1주/1달/YTD) — a price-only return over the window. */
+function positionsValueAt(histMap, holdings, rate, ts) {
+  let sum = 0, ok = false;
+  holdings.forEach((h) => {
+    const key = h.type === "crypto" ? `${(h.ticker || "").toUpperCase()}-USD` : h.ticker;
+    const hist = histMap[key]; const qty = Number(h.qty) || 0;
+    if (!hist?.closes?.length || qty <= 0) return;
+    const c = closeAt(hist, ts); if (c == null) return;
+    sum += qty * c * (h.cur === "KRW" ? 1 / rate : 1); ok = true;
+  });
+  return ok ? sum : null;
 }
 function buildPerf(histMap, holdings, rate) {
   const g = histMap["^GSPC"], n = histMap["^NDX"], k = histMap["^KS11"];
@@ -784,6 +809,7 @@ export default function App() {
   const [advanced, setAdvanced] = useState(false);
   const [hideAmt, setHideAmt] = useState(false);
   const [goal, setGoal] = useState(null);          // { amount, cur }
+  const [targets, setTargets] = useState({});      // { 주식: 60, 채권: 20, ... } target asset-class %
   const [snapshots, setSnapshots] = useState([]);   // [{ t: 'YYYY-MM-DD', v: USD }]
   const [benchmarks, setBenchmarks] = useState({}); // { '^GSPC': {chg}, ... }
   const [histMap, setHistMap] = useState({});        // { symbol: {closes, ts} } for indicators + perf chart
@@ -803,6 +829,7 @@ export default function App() {
       if (s?.holdings?.length) setHoldings(s.holdings.map((h) => ({ avgCost: null, ...h })));
       if (s?.cash) setCash(s.cash);
       if (s?.goal) setGoal(s.goal);
+      if (s?.targets) setTargets(s.targets);
       if (s?.snapshots) setSnapshots(s.snapshots);
       const x = s?.settings;
       if (x) {
@@ -822,8 +849,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (hydrated && !previewMode) { persist({ holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced } }); setSavedAt(Date.now()); }
-  }, [holdings, cash, goal, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced, hydrated, previewMode]);
+    if (hydrated && !previewMode) { persist({ holdings, cash, goal, targets, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced } }); setSavedAt(Date.now()); }
+  }, [holdings, cash, goal, targets, snapshots, themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode, portfolioCollapsed, advanced, hydrated, previewMode]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -898,6 +925,26 @@ export default function App() {
     activeHoldings.forEach((h) => { const v = valueOf(h); if (h.chg != null && v) { w += v; sum += v * h.chg; } });
     return w ? sum / w : null;
   }, [activeHoldings, valueOf]);
+
+  /* today's P&L in currency: each position's gain since the prior close (value already
+     reflects today's move, so the gain is value − value/(1+chg/100)). */
+  const dayPnl = useMemo(() => {
+    let any = false, sum = 0;
+    activeHoldings.forEach((h) => { const v = valueOf(h); if (h.chg != null && v) { any = true; const base = 1 + h.chg / 100; if (base > 0) sum += v - v / base; } });
+    return any ? sum : null;
+  }, [activeHoldings, valueOf]);
+
+  /* period returns for the 수익률 toggle. 1일=dayChange, 전체=cost-based totalReturn,
+     1주/1달/YTD = price-only return from each holding's history (null until enough data). */
+  const periodReturns = useMemo(() => {
+    const master = histMap["^GSPC"] || histMap["^NDX"] || histMap["^KS11"];
+    const lastTs = master?.ts?.length ? master.ts[master.ts.length - 1] : null;
+    const now = lastTs ? positionsValueAt(histMap, activeHoldings, rate, lastTs) : null;
+    const ret = (days) => { if (!lastTs || !now) return null; const v0 = positionsValueAt(histMap, activeHoldings, rate, lastTs - days * 86400); return v0 ? (now / v0 - 1) * 100 : null; };
+    const jan1 = Math.floor(new Date(new Date().getFullYear(), 0, 1).getTime() / 1000);
+    const ytdV0 = lastTs ? positionsValueAt(histMap, activeHoldings, rate, jan1) : null;
+    return { "1d": dayChange, "1w": ret(7), "1m": ret(30), ytd: (now && ytdV0) ? (now / ytdV0 - 1) * 100 : null, all: totalReturn };
+  }, [histMap, activeHoldings, rate, dayChange, totalReturn]);
 
   /* unified leaves for heatmap + donut (positions + cash) */
   const leaves = useMemo(() => {
@@ -1100,7 +1147,7 @@ export default function App() {
 
   /* backup / restore (#14) */
   const exportData = useCallback(() => {
-    const payload = { version: 2, exportedAt: new Date().toISOString(), holdings, cash, goal, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } };
+    const payload = { version: 2, exportedAt: new Date().toISOString(), holdings, cash, goal, targets, snapshots, settings: { themeName, displayCur, heatMode, capChange, capReturn, showPct, labelMode } };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a"); a.href = url; a.download = `portfolio-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
@@ -1116,6 +1163,7 @@ export default function App() {
         if (Array.isArray(d.holdings)) setHoldings(d.holdings.map((h) => ({ avgCost: null, buyDate: null, ...h })));
         if (Array.isArray(d.cash)) setCash(d.cash);
         if (d.goal) setGoal(d.goal);
+        if (d.targets) setTargets(d.targets);
         if (Array.isArray(d.snapshots)) setSnapshots(d.snapshots);
         const x = d.settings || {};
         if (x.themeName) setThemeName(x.themeName);
@@ -1183,6 +1231,10 @@ export default function App() {
         @keyframes spin{to{transform:rotate(360deg);}} .spin{animation:spin 1s linear infinite;}
         input[type=range]{accent-color:${th.accent};}
         @media (max-width:900px){.ph-grid{grid-template-columns:minmax(0,1fr) !important;}}
+        .summary-grid{grid-template-columns:repeat(6,minmax(0,1fr)) auto;}
+        @media (max-width:900px){.summary-grid{grid-template-columns:1fr 1fr;} .summary-grid .sum-btn{grid-column:1 / -1;justify-content:flex-start;}}
+        .mobile-tabbar{display:none;}
+        @media (max-width:640px){.mobile-tabbar{display:flex !important;} .app-body{padding-bottom:78px !important;}}
         @media (max-width:640px){
           .app-header{flex-wrap:wrap !important;padding:11px 14px !important;gap:9px !important;}
           .app-brand .brand-name{display:none !important;}
@@ -1208,7 +1260,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1 }} />
         <div className="app-headline" style={{ textAlign: "right", marginRight: 6 }}>
-          <div className="num app-total" style={{ fontSize: 23, ...DISP }}>{hideAmt ? "••••••" : fmtMoney(totalAssets, displayCur)}</div>
+          <div className="num app-total" style={{ fontSize: 23, ...DISP }}><AnimatedMoney value={totalAssets} displayCur={displayCur} hidden={hideAmt} /></div>
           <div className="app-delta" style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 3 }}>
             <DeltaPill th={th} label="오늘" v={dayChange} />
             <DeltaPill th={th} label="수익" v={totalReturn} />
@@ -1267,7 +1319,7 @@ export default function App() {
           <WelcomeBanner th={th} onSample={loadSample} onAdd={addHolding} onClose={() => { setWelcomeDismissed(true); setShowWelcome(false); }} />
         )}
         {/* Summary band */}
-        <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} count={activeHoldings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} divAnnual={dividendData.totalAnnual} />
+        <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} dayPnl={dayPnl} periodReturns={periodReturns} count={activeHoldings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} divAnnual={dividendData.totalAnnual} />
         {/* Heatmap — full width */}
         <div id="sec-heatmap" className="sec">
         <Panel th={th} title="Heatmap" glow
@@ -1321,7 +1373,10 @@ export default function App() {
             <FxCard th={th} fx={fxPnl} displayCur={displayCur} />
             <DividendCard th={th} dv={dividendData} displayCur={displayCur} hideAmt={hideAmt} />
           </div>
-          <AllocationDonut th={th} sectorData={sectorData} assetClassData={assetClassData} assetClassColors={ASSET_CLASS_COLORS} sectorColorMap={colorMap} holdingValue={holdingAllocValue} holdingCost={holdingAllocCost} holdingColorMap={holdingColorMap} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <AllocationDonut th={th} sectorData={sectorData} assetClassData={assetClassData} assetClassColors={ASSET_CLASS_COLORS} sectorColorMap={colorMap} holdingValue={holdingAllocValue} holdingCost={holdingAllocCost} holdingColorMap={holdingColorMap} />
+            <TargetAllocationCard th={th} assetClassData={assetClassData} targets={targets} setTargets={setTargets} displayCur={displayCur} hideAmt={hideAmt} />
+          </div>
         </div>
 
         {/* goal + benchmark */}
@@ -1350,6 +1405,7 @@ export default function App() {
       </div>
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
       {feedbackOpen && <FeedbackModal th={th} onClose={() => setFeedbackOpen(false)} />}
+      <MobileTabBar th={th} />
     </div>
   );
 }
@@ -1384,9 +1440,9 @@ function CashCard({ th, cash, displayCur, conv, cashValue, cashPct, investedValu
         {cash.map((c) => (
           <div key={c.id} style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input value={c.label} placeholder="메모(선택)" onChange={(e) => onUpdate(c.id, { label: e.target.value })} style={{ ...inpStyle(th, 0), flex: 1, minWidth: 0 }} />
-            <input type="number" value={c.amount || ""} placeholder="금액" onChange={(e) => onUpdate(c.id, { amount: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 92), textAlign: "right" }} className="num" />
+            <NumInput value={c.amount || null} placeholder="금액" onChange={(v) => onUpdate(c.id, { amount: v || 0 })} style={{ ...inpStyle(th, 92), textAlign: "right" }} className="num" />
             <select value={c.cur} onChange={(e) => onUpdate(c.id, { cur: e.target.value })} style={selStyle(th, 52)}><option value="USD">$</option><option value="KRW">₩</option></select>
-            <button className="ph-btn" onClick={() => onRemove(c.id)} style={{ ...iconBtn(th), width: 28, height: 28, color: th.heatNeg }}><Trash2 size={13} /></button>
+            <button className="ph-btn" onClick={() => onRemove(c.id)} aria-label="현금 삭제" style={{ ...iconBtn(th), width: 40, height: 40, flexShrink: 0, color: th.heatNeg }}><Trash2 size={15} /></button>
           </div>
         ))}
         {!cash.length && <div style={{ fontSize: 12, color: th.textFaint, padding: "4px 0" }}>현금을 추가하면 비중이 계산됩니다</div>}
@@ -1444,7 +1500,7 @@ function Treemap({ leaves, th, cap, showPct, labelMode, onTile }) {
     return r;
   }, [leaves, w, H]);
 
-  if (!root) return <div ref={ref} style={{ height: H, display: "grid", placeItems: "center", color: th.textFaint, border: `1px dashed ${th.border}`, borderRadius: 8, fontSize: 13 }}>종목을 추가하면 히트맵이 표시됩니다</div>;
+  if (!root) return <div ref={ref}><EmptyState th={th} icon={LayoutGrid} title="아직 표시할 종목이 없어요" hint="종목과 수량을 추가하면 보유 비중이 한눈에 보이는 히트맵이 그려져요." height={H} /></div>;
 
   return (
     <div ref={ref} style={{ position: "relative", width: "100%", height: H, borderRadius: 8, overflow: "hidden", background: th.band }}>
@@ -1556,13 +1612,13 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                   onPick={(sym) => { const s = (sym || h.ticker || "").toUpperCase(); if (s !== h.ticker) onUpdate(h.id, { ticker: s, live: false }); onAutoFill(h.id, s, h.type); }} /></td>
                 <td style={cell}><input value={h.name} placeholder="자동" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={inpStyle(th, 120)} /></td>
                 <td style={cell}><input list="ph-sectors" value={h.sector} placeholder="섹터/테마" onChange={(e) => onUpdate(h.id, { sector: e.target.value })} style={inpStyle(th, 132)} /></td>
-                <td style={{ ...cell, textAlign: "right" }}><input type="number" value={h.qty || ""} placeholder="0" onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 66), textAlign: "right" }} className="num" /></td>
-                <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 76), textAlign: "right" }} className="num" /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>
+                <td style={{ ...cell, textAlign: "right" }}><NumInput value={h.qty || null} placeholder="0" onChange={(v) => onUpdate(h.id, { qty: v || 0 })} style={{ ...inpStyle(th, 66), textAlign: "right" }} className="num" /></td>
+                <td style={{ ...cell, textAlign: "right" }}><div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}><NumInput value={h.avgCost ?? null} allowEmpty placeholder="평단" onChange={(v) => onUpdate(h.id, { avgCost: v })} style={{ ...inpStyle(th, 76), textAlign: "right" }} className="num" /><span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span></div></td>
                 {advanced && <td style={{ ...cell, textAlign: "center" }}><input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 124), colorScheme: th === THEMES.dark ? "dark" : "light" }} title="매수일(선택)" /></td>}
-                {advanced && <td style={{ ...cell, textAlign: "right" }}><input type="number" step="0.1" value={h.divYield ?? ""} placeholder="0" onChange={(e) => onUpdate(h.id, { divYield: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 56), textAlign: "right" }} className="num" title="연간 배당률(%) — 예: SCHD 3.5" /></td>}
+                {advanced && <td style={{ ...cell, textAlign: "right" }}><NumInput value={h.divYield ?? null} allowEmpty placeholder="0" onChange={(v) => onUpdate(h.id, { divYield: v })} style={{ ...inpStyle(th, 56), textAlign: "right" }} className="num" title="연간 배당률(%) — 예: SCHD 3.5" /></td>}
                 <td style={{ ...cell, textAlign: "right" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 3, justifyContent: "flex-end" }}>
-                    <input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 84), textAlign: "right", color: h.live ? th.accent : th.text }} className="num" title={h.live ? "야후 실시간" : "직접 입력 가능"} />
+                    <NumInput value={h.price ?? null} allowEmpty placeholder="자동" onChange={(v) => onUpdate(h.id, { price: v, live: false })} style={{ ...inpStyle(th, 84), textAlign: "right", color: h.live ? th.accent : th.text }} className="num" title={h.live ? "야후 실시간" : "직접 입력 가능"} />
                     <span style={{ fontSize: 11, color: th.textFaint, width: 10 }}>{h.cur === "KRW" ? "₩" : "$"}</span>
                   </div>
                   {h.live && h.mkt && h.mkt !== "정규장" && (
@@ -1575,7 +1631,7 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                 <td className="num" style={{ ...cell, textAlign: "right", color: ret == null ? th.textFaint : ret >= 0 ? th.heatPos : th.heatNeg, fontWeight: 700 }}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}`}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", fontWeight: 600 }}>{hideAmt ? "••••" : fmtMoney(v, displayCur)}</td>
                 <td className="num" style={{ ...cell, textAlign: "right", color: th.textDim }}>{fmt(wpct, 1)}%</td>
-                <td style={{ ...cell, textAlign: "center" }}><button className="ph-btn" onClick={() => onRemove(h.id)} style={{ ...iconBtn(th), width: 28, height: 28, color: th.heatNeg }}><Trash2 size={14} /></button></td>
+                <td style={{ ...cell, textAlign: "center" }}><button className="ph-btn" onClick={() => onRemove(h.id)} aria-label="종목 삭제" style={{ ...iconBtn(th), width: 34, height: 34, color: th.heatNeg }}><Trash2 size={15} /></button></td>
               </tr>
             );
           })}
@@ -1589,6 +1645,74 @@ function PortfolioTable({ holdings, th, displayCur, valueOf, totalAssets, onUpda
 /* ------------------------------------------------------------------ *
  *  PRIMITIVES                                                         *
  * ------------------------------------------------------------------ */
+/* Numeric input that preserves the raw typed text while focused, so fractional
+   values like 0.0234523 (and intermediate states "0", "0.", "0.0") can be typed
+   without a controlled-number reformat wiping the leading zero. Emits a parsed
+   number (or null when allowEmpty + blank) and re-syncs from props on blur. */
+function NumInput({ value, onChange, allowEmpty = false, ...rest }) {
+  const [txt, setTxt] = useState(value == null ? "" : String(value));
+  const editing = useRef(false);
+  useEffect(() => { if (!editing.current) setTxt(value == null ? "" : String(value)); }, [value]);
+  return (
+    <input
+      type="text" inputMode="decimal" autoComplete="off"
+      value={txt}
+      onFocus={() => { editing.current = true; }}
+      onBlur={() => { editing.current = false; setTxt(value == null ? "" : String(value)); }}
+      onChange={(e) => {
+        const t = e.target.value;
+        if (/^[0-9]*\.?[0-9]*$/.test(t)) {
+          setTxt(t);
+          if (t === "" || t === ".") { onChange(allowEmpty ? null : 0); return; }
+          const n = parseFloat(t);
+          if (!isNaN(n)) onChange(n);
+        }
+      }}
+      {...rest}
+    />
+  );
+}
+/* count-up: animates the displayed number from its current value to a new target
+   with an ease-out curve. Powers the "살아있는" balance roll-up on every refresh. */
+function useCountUp(target, ms = 650) {
+  const [val, setVal] = useState(target);
+  const valRef = useRef(target); valRef.current = val;
+  const raf = useRef(0);
+  useEffect(() => {
+    const from = valRef.current, to = target;
+    if (!isFinite(to)) { setVal(to); return; }
+    if (from === to) return;
+    const start = performance.now();
+    const tick = (now) => {
+      const t = Math.min(1, (now - start) / ms);
+      const e = 1 - Math.pow(1 - t, 3);
+      setVal(from + (to - from) * e);
+      if (t < 1) raf.current = requestAnimationFrame(tick);
+    };
+    raf.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf.current);
+  }, [target, ms]);
+  return val;
+}
+function AnimatedMoney({ value, displayCur, hidden, dots = "••••••" }) {
+  const v = useCountUp(value || 0);
+  return hidden ? dots : fmtMoney(v, displayCur);
+}
+
+/* Friendly empty state — a soft circular icon plate + title + hint, replacing bare gray boxes. */
+function EmptyState({ th, icon: Icon, title, hint, height = 220 }) {
+  return (
+    <div style={{ minHeight: height, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", gap: 12, padding: "24px 16px" }}>
+      <div style={{ width: 56, height: 56, borderRadius: 9999, background: th.panelAlt, display: "grid", placeItems: "center", color: th.textDim }}>
+        {Icon && <Icon size={26} strokeWidth={1.6} />}
+      </div>
+      <div>
+        <div style={{ fontSize: 15, fontWeight: 600, color: th.text, marginBottom: 4 }}>{title}</div>
+        {hint && <div style={{ fontSize: 13, color: th.textFaint, lineHeight: 1.6, maxWidth: 280 }}>{hint}</div>}
+      </div>
+    </div>
+  );
+}
 function DeltaPill({ th, label, v }) {
   const up = v != null && v >= 0;
   const c = v == null ? th.textDim : up ? th.heatPos : th.heatNeg;
@@ -1814,7 +1938,7 @@ function GoalCard({ th, goal, setGoal, totalAssets, displayCur, conv }) {
     <Panel th={th} title="목표 설정" titleExtra={<Target size={15} color={th.textDim} />}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 14 }}>
         <span style={{ fontSize: 12, color: th.textDim }}>목표 금액</span>
-        <input type="number" value={amount} placeholder="예: 100000000" onChange={(e) => setGoal({ amount: e.target.value === "" ? null : parseFloat(e.target.value), cur: gcur })} style={{ ...inpStyle(th, 0), flex: 1, textAlign: "right" }} className="num" />
+        <NumInput value={amount ?? null} allowEmpty placeholder="예: 100000000" onChange={(v) => setGoal({ amount: v, cur: gcur })} style={{ ...inpStyle(th, 0), flex: 1, textAlign: "right" }} className="num" />
         <select value={gcur} onChange={(e) => setGoal({ amount: goal?.amount ?? null, cur: e.target.value })} style={selStyle(th, 54)}><option value="USD">$</option><option value="KRW">₩</option></select>
       </div>
       {goalInDisplay ? (
@@ -1943,8 +2067,8 @@ function BenchmarkCard({ th, dayChange, benchmarks, perf }) {
     </Panel>
   );
 }
-function Empty({ th, text }) {
-  return <div style={{ height: 150, display: "grid", placeItems: "center", color: th.textFaint, fontSize: 13, textAlign: "center", lineHeight: 1.6 }}>{text}</div>;
+function Empty({ th, text, icon = Target }) {
+  return <EmptyState th={th} icon={icon} title="아직 보여드릴 데이터가 없어요" hint={text} height={160} />;
 }
 
 /* ------------------------------------------------------------------ *
@@ -2039,9 +2163,18 @@ function ImportPanel({ th, onImport }) {
       </div>
       {mode === "csv" ? (
         <>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+            {[["미국주식", "AAPL, 10, 175\nNVDA, 5, 110\nSCHD, 40, 26"], ["한국주식", "삼성전자, 30, 68000\nSK하이닉스, 5, 150000"], ["코인", "BTC, 0.15, 56000\nETH, 2, 2900"], ["채권/현물", "TLT, 50, 95\nGLD, 10, 195"]].map(([lbl, tpl]) => (
+              <button key={lbl} className="ph-btn" onClick={() => setCsv((c) => (c.trim() ? c.replace(/\s*$/, "") + "\n" + tpl : tpl))} style={{ ...secondaryBtn(th), padding: "5px 11px", fontSize: 11.5 }}>+ {lbl} 예시</button>
+            ))}
+          </div>
           <textarea value={csv} onChange={(e) => setCsv(e.target.value)} placeholder={"한 줄에 한 종목:  티커, 수량, 평단가\nAAPL, 30, 175\n삼성전자, 100, 68000\nBTC, 0.5, 55000"}
             style={{ width: "100%", minHeight: 96, background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 8, padding: 10, fontSize: 12.5, fontFamily: "inherit", resize: "vertical" }} />
-          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 10 }}>
+          <p style={{ fontSize: 11, color: th.textFaint, marginTop: 8, lineHeight: 1.6 }}>
+            쉼표·탭·공백 구분 모두 인식해요. 증권사 표를 그대로 복사해 붙여넣어도 돼요(탭 구분이면 <b style={{ color: th.textDim }}>68,000</b> 같은 천단위 쉼표도 안전). 통화는 <b style={{ color: th.textDim }}>₩·$·KRW·USD</b>를 자동 인식합니다.
+          </p>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8, gap: 10 }}>
+            <button className="ph-btn" onClick={() => { setCsv(""); setMsg(""); }} style={{ background: "transparent", border: "none", color: th.textFaint, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>지우기</button>
             <button className="ph-btn ph-primary" onClick={doCsv} style={primaryBtn(th)}>가져오기</button>
           </div>
         </>
@@ -2089,6 +2222,33 @@ function TopNav({ th, onHelp }) {
         )}
       </div>
     </div>
+  );
+}
+
+/* Fixed bottom tab bar — mobile only (≤640px, toggled via CSS). Quick access to the four
+   core sections, with a scroll-spy active state highlighted in Coinbase blue. */
+const MOBILE_TABS = [["sec-heatmap", "히트맵", LayoutGrid], ["sec-portfolio", "포트폴리오", Wallet], ["sec-allocation", "섹터", PieIcon], ["sec-goal", "목표", Target]];
+function MobileTabBar({ th }) {
+  const [active, setActive] = useState("sec-heatmap");
+  const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  useEffect(() => {
+    const ids = MOBILE_TABS.map((t) => t[0]);
+    const onScroll = () => { let cur = ids[0]; for (const id of ids) { const el = document.getElementById(id); if (el && el.getBoundingClientRect().top <= 150) cur = id; } setActive(cur); };
+    window.addEventListener("scroll", onScroll, { passive: true }); onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+  return (
+    <nav className="mobile-tabbar" style={{ position: "fixed", left: 0, right: 0, bottom: 0, zIndex: 50, background: th.panel, borderTop: `1px solid ${th.border}`, justifyContent: "space-around", padding: "5px 4px max(6px, env(safe-area-inset-bottom))" }}>
+      {MOBILE_TABS.map(([id, label, Icon]) => {
+        const on = active === id;
+        return (
+          <button key={id} onClick={() => go(id)} aria-label={label} style={{ flex: 1, background: "transparent", border: "none", color: on ? th.accent : th.textFaint, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "6px 0", minHeight: 48, cursor: "pointer", fontFamily: "inherit", transition: "color .15s" }}>
+            <Icon size={21} strokeWidth={on ? 2.4 : 1.8} />
+            <span style={{ fontSize: 11, fontWeight: 600 }}>{label}</span>
+          </button>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -2272,6 +2432,15 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
   const initialData = closes.map((c, i) => ({ t: ts[i], v: c })).filter((d) => d.t && d.v != null);
   const cur = holding?.cur === "KRW" ? "₩" : "$";
   const sym = info.key || info.ticker;
+  /* high/low range bar — where price & my avg-cost sit within the data window */
+  const valid = closes.filter((c) => c != null);
+  const hi = valid.length ? Math.max(...valid) : null, lo = valid.length ? Math.min(...valid) : null;
+  const price = holding?.price ?? (valid.length ? valid[valid.length - 1] : null);
+  const avg = holding?.avgCost;
+  const frac = (x) => (hi != null && lo != null && hi > lo && x != null ? Math.max(0, Math.min(1, (x - lo) / (hi - lo))) : null);
+  const pricePos = frac(price), avgPos = frac(avg);
+  const spanDays = ts.length >= 2 ? (ts[ts.length - 1] - ts[0]) / 86400 : 0;
+  const rangeLabel = spanDays >= 330 ? "52주 고저" : spanDays >= 20 ? `최근 ${Math.max(1, Math.round(spanDays / 30))}개월 고저` : "고저";
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 80, display: "grid", placeItems: "center", padding: 18 }}>
       <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(640px,100%)", maxHeight: "92vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 16, padding: 20, boxShadow: th.cardShadow }}>
@@ -2287,6 +2456,24 @@ function StockModal({ th, info, hist, holding, displayCur, onClose }) {
             {holding.chg != null && <span style={{ color: holding.chg >= 0 ? th.heatPos : th.heatNeg }} className="num">{holding.chg >= 0 ? "+" : ""}{fmt(holding.chg)}% (1일)</span>}
             {holding.rsi != null && <span>RSI <b className="num">{fmt(holding.rsi, 0)}</b></span>}
             {holding.bbPos != null && <span>BB <b className="num">{fmt(holding.bbPos, 0)}%</b></span>}
+          </div>
+        )}
+        {hi != null && lo != null && hi > lo && (
+          <div style={{ margin: "4px 0 16px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: th.textFaint, marginBottom: 7 }}>
+              <span>{rangeLabel}</span>
+              {pricePos != null && <span className="num">현재 {cur}{fmt(price, price < 10 ? 4 : 2)} · 범위 내 {fmt(pricePos * 100, 0)}%</span>}
+            </div>
+            <div style={{ position: "relative", height: 8, borderRadius: 9999, background: th.panelAlt, border: `1px solid ${th.border}` }}>
+              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${(pricePos ?? 0) * 100}%`, background: th.accent, opacity: 0.28, borderRadius: 9999 }} />
+              {avgPos != null && <div title={`내 평단 ${cur}${fmt(avg, avg < 10 ? 4 : 2)}`} style={{ position: "absolute", left: `${avgPos * 100}%`, top: -3, bottom: -3, width: 2, background: th.textDim, transform: "translateX(-1px)" }} />}
+              {pricePos != null && <div title="현재가" style={{ position: "absolute", left: `${pricePos * 100}%`, top: "50%", width: 12, height: 12, borderRadius: 9999, background: th.accent, border: `2px solid ${th.panel}`, transform: "translate(-50%,-50%)" }} />}
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 10.5, color: th.textFaint, marginTop: 6 }} className="num">
+              <span>{cur}{fmt(lo, lo < 10 ? 4 : 2)}</span>
+              {avgPos != null && <span style={{ color: th.textDim }}>● 현재 &nbsp; ｜ 내 평단</span>}
+              <span>{cur}{fmt(hi, hi < 10 ? 4 : 2)}</span>
+            </div>
           </div>
         )}
         <StockChart th={th} sym={sym} cur={cur} initialData={initialData} />
@@ -2319,16 +2506,16 @@ function PortfolioCards({ holdings, th, displayCur, valueOf, totalAssets, onUpda
                   onPick={(sym) => { const s = (sym || h.ticker || "").toUpperCase(); if (s !== h.ticker) onUpdate(h.id, { ticker: s, live: false }); onAutoFill(h.id, s, h.type); }} />
               </div>
               <select value={h.type} onChange={(e) => onUpdate(h.id, typeChangePatch(e.target.value, h.sector, h.cur))} style={selStyle(th, 96)}>{TYPE_OPTIONS}</select>
-              <button className="ph-btn" onClick={() => onRemove(h.id)} style={{ ...iconBtn(th), width: 30, height: 30, color: th.heatNeg }}><Trash2 size={14} /></button>
+              <button className="ph-btn" onClick={() => onRemove(h.id)} aria-label="종목 삭제" style={{ ...iconBtn(th), width: 44, height: 44, flexShrink: 0, color: th.heatNeg }}><Trash2 size={17} /></button>
             </div>
             <input value={h.name} placeholder="이름 (자동)" onChange={(e) => onUpdate(h.id, { name: e.target.value })} style={{ ...inpStyle(th, 0), width: "100%", marginBottom: 8 }} />
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 10 }}>
               {fld("섹터/테마", <input list="ph-sectors" value={h.sector} placeholder="섹터" onChange={(e) => onUpdate(h.id, { sector: e.target.value })} style={{ ...inpStyle(th, 0), width: "100%" }} />)}
-              {fld("수량", <input type="number" value={h.qty || ""} placeholder="0" onChange={(e) => onUpdate(h.id, { qty: parseFloat(e.target.value) || 0 })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
-              {fld(`평단가(${h.cur === "KRW" ? "₩" : "$"})`, <input type="number" value={h.avgCost ?? ""} placeholder="평단" onChange={(e) => onUpdate(h.id, { avgCost: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
-              {fld(`현재가(${h.cur === "KRW" ? "₩" : "$"})`, <input type="number" value={h.price ?? ""} placeholder="자동" onChange={(e) => onUpdate(h.id, { price: e.target.value === "" ? null : parseFloat(e.target.value), live: false })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right", color: h.live ? th.accent : th.text }} className="num" />)}
+              {fld("수량", <NumInput value={h.qty || null} placeholder="0" onChange={(v) => onUpdate(h.id, { qty: v || 0 })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
+              {fld(`평단가(${h.cur === "KRW" ? "₩" : "$"})`, <NumInput value={h.avgCost ?? null} allowEmpty placeholder="평단" onChange={(v) => onUpdate(h.id, { avgCost: v })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
+              {fld(`현재가(${h.cur === "KRW" ? "₩" : "$"})`, <NumInput value={h.price ?? null} allowEmpty placeholder="자동" onChange={(v) => onUpdate(h.id, { price: v, live: false })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right", color: h.live ? th.accent : th.text }} className="num" />)}
               {advanced && fld("매수일", <input type="date" value={h.buyDate || ""} onChange={(e) => onUpdate(h.id, { buyDate: e.target.value || null })} style={{ ...inpStyle(th, 0), width: "100%" }} />)}
-              {advanced && fld("배당률(%)", <input type="number" step="0.1" value={h.divYield ?? ""} placeholder="0" onChange={(e) => onUpdate(h.id, { divYield: e.target.value === "" ? null : parseFloat(e.target.value) })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
+              {advanced && fld("배당률(%)", <NumInput value={h.divYield ?? null} allowEmpty placeholder="0" onChange={(v) => onUpdate(h.id, { divYield: v })} style={{ ...inpStyle(th, 0), width: "100%", textAlign: "right" }} className="num" />)}
             </div>
             <div style={{ display: "flex", gap: 14, flexWrap: "wrap", paddingTop: 9, borderTop: `1px solid ${th.border}` }}>
               {metric("일간", h.chg == null ? "—" : `${h.chg >= 0 ? "+" : ""}${fmt(h.chg)}%`, h.chg == null ? th.textFaint : h.chg >= 0 ? th.heatPos : th.heatNeg)}
@@ -2624,25 +2811,42 @@ function DividendCard({ th, dv, displayCur, hideAmt }) {
 /* ------------------------------------------------------------------ *
  *  SUMMARY BAND (big top stats, Finviz-style overview)                *
  * ------------------------------------------------------------------ */
-function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur, hideAmt, onToggleHide, divAnnual }) {
+const PERIODS = [["all", "전체"], ["1d", "1일"], ["1w", "1주"], ["1m", "1달"], ["ytd", "YTD"]];
+function SummaryBand({ th, totalAssets, cost, value, ret, pnl, dayPnl, periodReturns, count, displayCur, hideAmt, onToggleHide, divAnnual }) {
+  const [period, setPeriod] = useState("all");
+  const pr = periodReturns || { all: ret };
+  const rv = pr[period];
   const m = (v) => (hideAmt ? "••••" : fmtMoney(v, displayCur));
-  const Cell = ({ label, children, color }) => (
-    <div style={{ flex: "1 1 150px", minWidth: 130, padding: "12px 16px", borderRight: `1px solid ${th.border}` }}>
-      <div style={{ fontSize: 11, color: th.textFaint, fontWeight: 700, marginBottom: 5 }}>{label}</div>
-      <div className="num" style={{ fontSize: 19, fontWeight: 700, letterSpacing: -0.4, color: color || th.text }}>{children}</div>
+  const am = (v) => <AnimatedMoney value={v} displayCur={displayCur} hidden={hideAmt} dots="••••" />;
+  const sign = (v) => (v >= 0 ? "+" : "−");
+  /* 1px gaps over a border-colored backdrop draw crisp gridlines between cells —
+     reads far cleaner on mobile (2-up) than per-cell borderRight that breaks on wrap. */
+  const Cell = ({ label, children, color, strong }) => (
+    <div className="sum-cell" style={{ background: th.panel, padding: "15px 16px" }}>
+      <div style={{ fontSize: 11.5, color: th.textFaint, fontWeight: 600, marginBottom: 6 }}>{label}</div>
+      <div className="num" style={{ fontSize: strong ? 21 : 19, ...DISP, color: color || th.text }}>{children}</div>
     </div>
   );
   return (
-    <div className="ph-card" style={{ borderRadius: 16, border: `1px solid ${th.border}`, background: th.panel, boxShadow: th.cardShadow, overflow: "hidden" }}>
-      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "stretch" }}>
-        <Cell label="총 평가금액">{m(totalAssets)}</Cell>
-        <Cell label="투자 원금">{m(cost)}</Cell>
-        <Cell label="평가 손익" color={pnl == null ? th.text : pnl >= 0 ? th.heatPos : th.heatNeg}>{pnl == null ? "—" : (pnl >= 0 ? "+" : "") + m(pnl)}</Cell>
-        <Cell label="전체 수익률" color={ret == null ? th.text : ret >= 0 ? th.heatPos : th.heatNeg}>{ret == null ? "—" : `${ret >= 0 ? "+" : ""}${fmt(ret)}%`}</Cell>
+    <div className="ph-card" style={{ borderRadius: 16, border: `1px solid ${th.border}`, background: th.border, boxShadow: th.cardShadow, overflow: "hidden" }}>
+      <div className="summary-grid" style={{ display: "grid", gap: 1, background: th.border }}>
+        <Cell label="오늘 손익" strong color={dayPnl == null ? th.text : dayPnl >= 0 ? th.heatPos : th.heatNeg}>{dayPnl == null ? "—" : <>{sign(dayPnl)}{am(Math.abs(dayPnl))}</>}</Cell>
+        <Cell label="투자 원금">{am(cost)}</Cell>
+        <Cell label="평가 손익" strong color={pnl == null ? th.text : pnl >= 0 ? th.heatPos : th.heatNeg}>{pnl == null ? "—" : <>{sign(pnl)}{am(Math.abs(pnl))}</>}</Cell>
+        <div className="sum-cell" style={{ background: th.panel, padding: "15px 16px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 11.5, color: th.textFaint, fontWeight: 600 }}>수익률</span>
+            <select value={period} onChange={(e) => setPeriod(e.target.value)} title="기간 선택" style={{ background: th.panelAlt, color: th.textDim, border: `1px solid ${th.border}`, borderRadius: 9999, padding: "2px 8px", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+              {PERIODS.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
+            </select>
+          </div>
+          <div className="num" style={{ fontSize: 21, ...DISP, color: rv == null ? th.textFaint : rv >= 0 ? th.heatPos : th.heatNeg }}>{rv == null ? "—" : `${rv >= 0 ? "+" : ""}${fmt(rv)}%`}</div>
+          {rv == null && period !== "all" && period !== "1d" && <div style={{ fontSize: 10, color: th.textFaint, marginTop: 3 }}>데이터 쌓이는 중</div>}
+        </div>
         <Cell label="보유 종목">{count}개</Cell>
-        <Cell label="연간 배당 수익" color={divAnnual > 0 ? th.heatPos : th.textFaint}>{divAnnual > 0 ? m(divAnnual) : "—"}</Cell>
-        <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", padding: "12px 14px" }}>
-          <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ background: th.panelAlt, border: `1px solid ${th.border}`, color: th.textDim, fontSize: 12, fontWeight: 700, padding: "8px 12px", borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap" }}>
+        <Cell label="연간 배당 수익" color={divAnnual > 0 ? th.heatPos : th.textFaint}>{divAnnual > 0 ? am(divAnnual) : "—"}</Cell>
+        <div className="sum-cell sum-btn" style={{ background: th.panel, display: "flex", alignItems: "center", padding: "12px 16px" }}>
+          <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ ...secondaryBtn(th), padding: "9px 14px", fontSize: 12.5 }}>
             {hideAmt ? "👁 금액 보이기" : "🙈 금액 가리기"}
           </button>
         </div>
@@ -2654,6 +2858,76 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, count, displayCur
 /* ------------------------------------------------------------------ *
  *  ALLOCATION DONUT — 섹터별 / 종목별(원금·평가액) 토글                 *
  * ------------------------------------------------------------------ */
+/* Target asset-class allocation + rebalancing gap (#7). Set a target % per asset class;
+   shows current vs target and the buy/sell amount to get there. */
+function TargetAllocationCard({ th, assetClassData, targets, setTargets, displayCur, hideAmt }) {
+  const total = assetClassData.reduce((s, d) => s + d.value, 0);
+  const curMap = {}; assetClassData.forEach((d) => { curMap[d.sector] = d; });
+  const classesWith = ASSET_CLASS_ORDER.filter((c) => (curMap[c]?.value > 0) || (targets[c] != null && targets[c] !== ""));
+  const shown = classesWith.length ? classesWith : ASSET_CLASS_ORDER;
+  const hasTargets = ASSET_CLASS_ORDER.some((c) => targets[c] != null && targets[c] !== "");
+  const targetSum = ASSET_CLASS_ORDER.reduce((s, c) => s + (Number(targets[c]) || 0), 0);
+  const m = (v) => (hideAmt ? "••••" : fmtMoney(v, displayCur));
+  const setT = (c, v) => setTargets((p) => ({ ...p, [c]: v }));
+  const fillEqual = () => { const n = shown.length, each = Math.round(100 / n), obj = {}; shown.forEach((c, i) => (obj[c] = i === n - 1 ? 100 - each * (n - 1) : each)); setTargets(obj); };
+  const fillCurrent = () => { const obj = {}; shown.forEach((c) => (obj[c] = +(curMap[c]?.pct || 0).toFixed(0))); setTargets(obj); };
+  return (
+    <Panel th={th} title="목표 자산배분" sub="목표 비중을 정하면 현재와의 차이·리밸런싱 금액을 알려줘요"
+      right={total > 0 && <div style={{ display: "flex", gap: 6 }}>
+        <button className="ph-btn" onClick={fillCurrent} title="현재 비중으로 채우기" style={{ ...secondaryBtn(th), padding: "6px 12px", fontSize: 12 }}>현재값</button>
+        <button className="ph-btn" onClick={fillEqual} title="똑같이 나누기" style={{ ...secondaryBtn(th), padding: "6px 12px", fontSize: 12 }}>균등</button>
+      </div>}>
+      {total <= 0 ? (
+        <EmptyState th={th} icon={Target} title="종목을 추가하면 목표를 설정할 수 있어요" hint="현금·주식·채권 등 자산군별 목표 비중을 정해두면, 지금 무엇을 더 사고/팔아야 하는지 알려드려요." height={150} />
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {shown.map((c) => {
+              const cur = curMap[c]?.pct || 0, curVal = curMap[c]?.value || 0;
+              const t = targets[c], set = t != null && t !== "", tNum = Number(t) || 0;
+              const gap = tNum - cur, amt = (total * tNum / 100) - curVal;
+              return (
+                <div key={c} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center", paddingBottom: 10, borderBottom: `1px solid ${th.border}` }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: 9999, background: ASSET_CLASS_COLORS[c], flexShrink: 0 }} />
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{c}</span>
+                      <span className="num" style={{ fontSize: 11.5, color: th.textFaint }}>현재 {fmt(cur, 1)}%</span>
+                    </div>
+                    <div style={{ position: "relative", height: 6, borderRadius: 9999, background: th.panelAlt, overflow: "hidden" }}>
+                      <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: `${Math.min(100, cur)}%`, background: ASSET_CLASS_COLORS[c] }} />
+                      {set && <div style={{ position: "absolute", left: `${Math.min(100, tNum)}%`, top: -2, bottom: -2, width: 2, background: th.text, transform: "translateX(-1px)" }} title={`목표 ${tNum}%`} />}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                      <NumInput value={t ?? null} allowEmpty placeholder="목표" onChange={(v) => setT(c, v)} style={{ ...inpStyle(th, 50), textAlign: "right" }} className="num" />
+                      <span style={{ fontSize: 11, color: th.textFaint }}>%</span>
+                    </div>
+                    <div style={{ width: 102, textAlign: "right" }}>
+                      {set ? (
+                        <>
+                          <div className="num" style={{ fontSize: 12.5, fontWeight: 700, color: Math.abs(gap) < 0.5 ? th.textDim : gap > 0 ? th.heatPos : th.heatNeg, whiteSpace: "nowrap" }}>{Math.abs(gap) < 0.5 ? "딱 맞음 ✓" : `${gap > 0 ? "▲" : "▼"} ${fmt(Math.abs(gap), 1)}%`}</div>
+                          {Math.abs(gap) >= 0.5 && <div className="num" style={{ fontSize: 10.5, color: th.textFaint, whiteSpace: "nowrap" }}>{amt >= 0 ? "+매수 " : "−매도 "}{m(Math.abs(amt))}</div>}
+                        </>
+                      ) : <span style={{ fontSize: 11, color: th.textFaint }}>목표 입력</span>}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {hasTargets && (
+            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 11, fontSize: 12.5 }}>
+              <span style={{ color: th.textFaint }}>목표 합계</span>
+              <span className="num" style={{ fontWeight: 700, color: Math.abs(targetSum - 100) < 0.5 ? th.heatPos : "#f4b000" }}>{fmt(targetSum, 0)}% {Math.abs(targetSum - 100) < 0.5 ? "✓" : "· 100% 권장"}</span>
+            </div>
+          )}
+        </>
+      )}
+    </Panel>
+  );
+}
 function AllocationDonut({ th, sectorData, assetClassData, assetClassColors, sectorColorMap, holdingValue, holdingCost, holdingColorMap }) {
   const [mode, setMode] = useState("sector");  // sector | holding
   const [basis, setBasis] = useState("value"); // value | cost
