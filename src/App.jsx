@@ -4,6 +4,7 @@ import { PieChart, Pie, Cell, ResponsiveContainer, AreaChart, Area, XAxis, YAxis
 import {
   Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
   Image as ImageIcon, FileText, LayoutGrid, PieChart as PieIcon,
+  User, LogOut, Lock, Bell, ChevronRight, Mail, ShieldCheck, Link2,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ *
@@ -134,6 +135,10 @@ function assetClassOf(sector) {
   if (sector === "크립토" || sector === "Crypto" || s === "crypto") return "크립토";
   return "주식";
 }
+/* avatar helpers for the demo account */
+function avatarColor(s) { let h = 0; for (let i = 0; i < (s || "").length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return PALETTE[h % PALETTE.length]; }
+function initials(s) { const t = (s || "?").trim(); const at = t.indexOf("@"); const base = at > 0 ? t.slice(0, at) : t; return (base[0] || "?").toUpperCase(); }
+
 /* build a stable, distinct color per sector from the (value-sorted) list */
 function buildColorMap(sectors) {
   const m = {}; let p = 0;
@@ -822,6 +827,12 @@ export default function App() {
   const [previewMode, setPreviewMode] = useState(false);
   const [preBackup, setPreBackup] = useState(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  /* demo account (client-side only, no backend yet) */
+  const [user, setUser] = useState(() => { try { return JSON.parse(localStorage.getItem("ph_user") || "null"); } catch { return null; } });
+  const [authView, setAuthView] = useState(null); // "login" | "mypage" | null
+  useEffect(() => { try { user ? localStorage.setItem("ph_user", JSON.stringify(user)) : localStorage.removeItem("ph_user"); } catch { /* ignore */ } }, [user]);
+  const login = (u) => { setUser(u); setAuthView("mypage"); };
+  const logout = () => { setUser(null); setAuthView(null); };
 
   useEffect(() => {
     (async () => {
@@ -1269,6 +1280,11 @@ export default function App() {
         <Segmented th={th} value={displayCur} onChange={setDisplayCur} options={[["USD", "$"], ["KRW", "₩"]]} />
         <button className="ph-btn" onClick={refresh} title="새로고침" style={iconBtn(th)}><RefreshCw size={16} className={loading ? "spin" : ""} color={th.accent} /></button>
         <button className="ph-btn" onClick={() => setThemeName(themeName === "dark" ? "light" : "dark")} title="테마" style={iconBtn(th)}>{themeName === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button>
+        {user ? (
+          <button className="ph-btn" onClick={() => setAuthView("mypage")} title="마이페이지" style={{ ...iconBtn(th), background: avatarColor(user.email || user.name), border: "none", color: "#fff", fontWeight: 700, fontSize: 14 }}>{initials(user.name || user.email)}</button>
+        ) : (
+          <button className="ph-btn" onClick={() => setAuthView("login")} title="로그인" style={iconBtn(th)}><User size={16} /></button>
+        )}
       </header>
 
       {/* STATUS */}
@@ -1405,6 +1421,8 @@ export default function App() {
       </div>
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
       {feedbackOpen && <FeedbackModal th={th} onClose={() => setFeedbackOpen(false)} />}
+      {authView === "login" && <AuthScreen th={th} onClose={() => setAuthView(null)} onLogin={login} />}
+      {authView === "mypage" && user && <MyPage th={th} user={user} onClose={() => setAuthView(null)} onLogout={logout} onUpdate={(patch) => setUser((u) => ({ ...u, ...patch }))} />}
       <MobileTabBar th={th} />
     </div>
   );
@@ -2643,6 +2661,112 @@ function FeedbackCard({ onOpen }) {
       >
         시작하기
       </button>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ *
+ *  ACCOUNT (demo shell — no real backend auth yet)                    *
+ * ------------------------------------------------------------------ */
+function AuthScreen({ th, onClose, onLogin }) {
+  const [tab, setTab] = useState("login"); // login | signup
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [pw, setPw] = useState("");
+  const submit = () => {
+    const em = email.trim() || "demo@portfolio.app";
+    const nm = (tab === "signup" ? name.trim() : "") || em.split("@")[0] || "투자자";
+    onLogin({ name: nm, email: em, joined: new Date().toISOString().slice(0, 10) });
+  };
+  const inp = (props) => <input {...props} style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 12, padding: "12px 14px", fontSize: 14, fontFamily: "inherit" }} />;
+  const field = (label, node) => <label style={{ display: "block", marginBottom: 12 }}><span style={{ display: "block", fontSize: 12.5, color: th.textDim, marginBottom: 6, fontWeight: 600 }}>{label}</span>{node}</label>;
+  const social = (label) => <button className="ph-btn" onClick={submit} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", background: "transparent", color: th.text, border: `1px solid ${th.border}`, borderRadius: 9999, padding: "12px 16px", fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(420px,100%)", maxHeight: "94vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 20, padding: "20px 26px 28px", boxShadow: th.cardShadow }}>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}><button className="ph-btn" onClick={onClose} aria-label="닫기" style={iconBtn(th)}>✕</button></div>
+        <div style={{ width: 46, height: 46, borderRadius: 13, background: th.accent, display: "grid", placeItems: "center", color: th.onAccent, fontSize: 24, ...DISP, margin: "0 auto 16px" }}>P</div>
+        <div style={{ textAlign: "center", marginBottom: 22 }}>
+          <div style={{ fontSize: 23, ...DISP, marginBottom: 6 }}>{tab === "login" ? "다시 만나서 반가워요" : "계정 만들기"}</div>
+          <div style={{ fontSize: 13.5, color: th.textDim, lineHeight: 1.5 }}>{CONFIG.productName}에 {tab === "login" ? "로그인" : "가입"}하고<br />내 포트폴리오를 어디서나 보세요.</div>
+        </div>
+        <div style={{ display: "flex", background: th.panelAlt, borderRadius: 9999, padding: 3, marginBottom: 20 }}>
+          {[["login", "로그인"], ["signup", "회원가입"]].map(([k, l]) => (
+            <button key={k} onClick={() => setTab(k)} style={{ flex: 1, border: "none", borderRadius: 9999, padding: "8px 0", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", background: tab === k ? th.accent : "transparent", color: tab === k ? th.onAccent : th.textDim }}>{l}</button>
+          ))}
+        </div>
+        {tab === "signup" && field("이름", inp({ value: name, onChange: (e) => setName(e.target.value), placeholder: "홍길동" }))}
+        {field("이메일", inp({ type: "email", value: email, onChange: (e) => setEmail(e.target.value), placeholder: "you@example.com" }))}
+        {field("비밀번호", inp({ type: "password", value: pw, onChange: (e) => setPw(e.target.value), placeholder: "••••••••" }))}
+        {tab === "login" && <div style={{ textAlign: "right", marginTop: -4, marginBottom: 14 }}><button style={{ background: "none", border: "none", color: th.accentText, fontSize: 12.5, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>비밀번호를 잊으셨나요?</button></div>}
+        <button className="ph-btn ph-primary" onClick={submit} style={{ ...primaryBtn(th), width: "100%", justifyContent: "center", padding: "13px", fontSize: 15 }}>{tab === "login" ? "로그인" : "가입하고 시작하기"}</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "18px 0", color: th.textFaint, fontSize: 12 }}><div style={{ flex: 1, height: 1, background: th.border }} />또는<div style={{ flex: 1, height: 1, background: th.border }} /></div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>{social("Google로 계속하기")}{social("Apple로 계속하기")}</div>
+        <p style={{ fontSize: 11.5, color: th.textFaint, textAlign: "center", lineHeight: 1.6, marginTop: 18 }}>데모용 화면이에요 — 실제 인증은 아직 없어요. 아무 값이나 입력하고 {tab === "login" ? "로그인" : "가입"}하면 마이페이지를 둘러볼 수 있어요.</p>
+      </div>
+    </div>
+  );
+}
+
+function MyPage({ th, user, onClose, onLogout, onUpdate }) {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(user.name || "");
+  const [nickname, setNickname] = useState(user.nickname || "");
+  const [email, setEmail] = useState(user.email || "");
+  const [toast, setToast] = useState("");
+  const showToast = (m) => { setToast(m); setTimeout(() => setToast(""), 1800); };
+  const save = () => { onUpdate({ name: name.trim() || user.name, nickname: nickname.trim(), email: email.trim() || user.email }); setEditing(false); showToast("회원 정보가 저장됐어요"); };
+  const inp = (props) => <input {...props} style={{ width: "100%", background: th.inputBg, border: `1px solid ${th.border}`, color: th.text, borderRadius: 12, padding: "11px 13px", fontSize: 14, fontFamily: "inherit" }} />;
+  const fld = (label, node) => <label style={{ display: "block", marginBottom: 12 }}><span style={{ display: "block", fontSize: 12, color: th.textDim, marginBottom: 6, fontWeight: 600 }}>{label}</span>{node}</label>;
+  const Row = ({ icon: Icon, label, sub, danger, onClick }) => (
+    <button className="ph-row" onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 13, width: "100%", textAlign: "left", background: "transparent", border: "none", borderRadius: 12, padding: "12px", cursor: "pointer", fontFamily: "inherit" }}>
+      <span style={{ width: 36, height: 36, borderRadius: 9999, background: danger ? th.negBg : th.panelAlt, display: "grid", placeItems: "center", color: danger ? th.heatNeg : th.textDim, flexShrink: 0 }}><Icon size={17} /></span>
+      <span style={{ flex: 1, minWidth: 0 }}><span style={{ display: "block", fontSize: 14, fontWeight: 600, color: danger ? th.heatNeg : th.text }}>{label}</span>{sub && <span style={{ display: "block", fontSize: 12, color: th.textFaint, marginTop: 1 }}>{sub}</span>}</span>
+      <ChevronRight size={17} color={th.textFaint} />
+    </button>
+  );
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(480px,100%)", maxHeight: "94vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 20, padding: "20px 22px 26px", boxShadow: th.cardShadow }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+          <div style={{ fontSize: 18, ...DISP }}>마이페이지</div><div style={{ flex: 1 }} /><button className="ph-btn" onClick={onClose} aria-label="닫기" style={iconBtn(th)}>✕</button>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "4px 2px 18px" }}>
+          <div style={{ width: 60, height: 60, borderRadius: 9999, background: avatarColor(user.email || user.name), display: "grid", placeItems: "center", color: "#fff", fontSize: 26, fontWeight: 700, flexShrink: 0 }}>{initials(user.name || user.email)}</div>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: 18, fontWeight: 600, color: th.text }}>{user.nickname || user.name}</div>
+            <div style={{ fontSize: 13, color: th.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.email}</div>
+            <div style={{ fontSize: 11.5, color: th.textFaint, marginTop: 2 }}>{user.joined ? `${user.joined} 가입` : "데모 계정"}</div>
+          </div>
+        </div>
+        {editing ? (
+          <div style={{ borderTop: `1px solid ${th.border}`, paddingTop: 16 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 12 }}>회원 정보 수정</div>
+            {fld("이름", inp({ value: name, onChange: (e) => setName(e.target.value) }))}
+            {fld("닉네임 (표시 이름)", inp({ value: nickname, onChange: (e) => setNickname(e.target.value), placeholder: "선택" }))}
+            {fld("이메일", inp({ type: "email", value: email, onChange: (e) => setEmail(e.target.value) }))}
+            <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+              <button className="ph-btn ph-primary" onClick={save} style={{ ...primaryBtn(th), flex: 1, justifyContent: "center" }}>저장</button>
+              <button className="ph-btn" onClick={() => setEditing(false)} style={{ ...secondaryBtn(th), flex: 1, justifyContent: "center" }}>취소</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div style={{ borderTop: `1px solid ${th.border}`, paddingTop: 8 }}>
+              <Row icon={User} label="회원 정보 수정" sub="이름·닉네임·이메일" onClick={() => setEditing(true)} />
+              <Row icon={Lock} label="비밀번호 변경" sub="보안을 위해 주기적으로 변경하세요" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
+              <Row icon={Bell} label="알림 설정" sub="가격·목표 도달 알림" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
+              <Row icon={Link2} label="연결된 계좌·거래소" sub="증권사/거래소 연동" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
+              <Row icon={ShieldCheck} label="약관 및 개인정보 처리방침" onClick={() => showToast("데모에선 준비 중인 기능이에요")} />
+            </div>
+            <div style={{ borderTop: `1px solid ${th.border}`, marginTop: 10, paddingTop: 10 }}>
+              <Row icon={LogOut} label="로그아웃" onClick={onLogout} />
+              <Row icon={Trash2} label="회원 탈퇴" danger onClick={() => showToast("데모에선 탈퇴가 비활성화돼 있어요")} />
+            </div>
+          </>
+        )}
+        {toast && <div style={{ position: "fixed", left: "50%", bottom: 34, transform: "translateX(-50%)", background: th.text, color: th.bg, fontSize: 13, fontWeight: 600, padding: "10px 18px", borderRadius: 9999, zIndex: 99, boxShadow: th.cardShadow }}>{toast}</div>}
+      </div>
     </div>
   );
 }
