@@ -83,12 +83,12 @@ async function submitFeedback(payload) {
  * ------------------------------------------------------------------ */
 const THEMES = {
   dark: {
-    name: "dark", bg: "#0a0b0d", panel: "#16181c", panelAlt: "#1f2227", border: "#23262c",
-    borderHover: "#33373d", text: "#ffffff", textDim: "#a8acb3", textFaint: "#7c828a",
-    accent: "#0052ff", accentActive: "#003ecc", onAccent: "#ffffff", accentGlow: "rgba(0,82,255,.45)",
-    accentText: "#4d8bff",
-    inputBg: "#16181c", heatPos: "#16c784", heatNeg: "#ff5b6a", heatNeu: "#1f2227",
-    rowHover: "#1f2227", band: "#101216",
+    name: "dark", bg: "#0e0f12", panel: "#1a1c21", panelAlt: "#23262c", border: "#2b2e35",
+    borderHover: "#3c4049", text: "#ffffff", textDim: "#b0b4ba", textFaint: "#80848b",
+    accent: "#1d5bff", accentActive: "#0f44e0", onAccent: "#ffffff", accentGlow: "rgba(29,91,255,.45)",
+    accentText: "#5b8cff",
+    inputBg: "#1a1c21", heatPos: "#16c784", heatNeg: "#ff5b6a", heatNeu: "#23262c",
+    rowHover: "#23262c", band: "#141519",
     posBg: "rgba(22,199,132,.16)", negBg: "rgba(255,91,106,.16)",
     cardShadow: "0 4px 12px rgba(0,0,0,.40)",
     heroGlow: "linear-gradient(180deg, rgba(0,82,255,.14), transparent 74%)",
@@ -828,6 +828,7 @@ export default function App() {
   const [previewMode, setPreviewMode] = useState(false);
   const [preBackup, setPreBackup] = useState(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [legalOpen, setLegalOpen] = useState(false);
   /* account — real Supabase session when configured, else local/demo */
   const [user, setUser] = useState(() => { if (supabaseEnabled) return null; try { return JSON.parse(localStorage.getItem("ph_user") || "null"); } catch { return null; } });
   const [authView, setAuthView] = useState(null); // "login" | "mypage" | null
@@ -1313,7 +1314,9 @@ export default function App() {
         .summary-grid{grid-template-columns:repeat(6,minmax(0,1fr)) auto;}
         @media (max-width:900px){.summary-grid{grid-template-columns:1fr 1fr;} .summary-grid .sum-btn{grid-column:1 / -1;justify-content:flex-start;}}
         .mobile-tabbar{display:none;}
-        @media (max-width:640px){.mobile-tabbar{display:flex !important;} .app-body{padding-bottom:78px !important;}}
+        .footlink:hover{color:${th.text} !important;}
+        @media (max-width:900px){.footer-grid{grid-template-columns:1fr 1fr !important;gap:28px 20px !important;} .footer-brand{grid-column:1/-1 !important;}}
+        @media (max-width:640px){.mobile-tabbar{display:flex !important;} .app-body{padding-bottom:78px !important;} .footer-inner{padding:34px 18px 104px !important;}}
         @media (max-width:640px){
           .app-header{flex-wrap:wrap !important;padding:11px 14px !important;gap:9px !important;}
           .app-brand .brand-name{display:none !important;}
@@ -1483,13 +1486,11 @@ export default function App() {
           {selectedWhale && <WhaleDetail th={th} whale={selectedWhale} onClose={() => setSelectedWhale(null)} onAdd={addAndFill} />}
         </div>
 
-        {/* feedback card — Polymarket-style */}
-        <div className="sec" style={{ display: "flex", justifyContent: "center", padding: "8px 0 48px" }}>
-          <FeedbackCard onOpen={() => { setFeedbackOpen(true); track("feedback_open", { from: "card" }); }} />
-        </div>
       </div>
+      <Footer th={th} user={user} onFeedback={() => { setFeedbackOpen(true); track("feedback_open", { from: "footer" }); }} onAccount={() => setAuthView(user ? "mypage" : "login")} onLegal={() => setLegalOpen(true)} />
       {stockModal && <StockModal th={th} info={stockModal} hist={histMap[stockModal.key]} holding={holdings.find((h) => h.ticker === stockModal.ticker)} displayCur={displayCur} onClose={() => setStockModal(null)} />}
       {feedbackOpen && <FeedbackModal th={th} onClose={() => setFeedbackOpen(false)} />}
+      {legalOpen && <LegalModal th={th} onClose={() => setLegalOpen(false)} />}
       {authView === "login" && <AuthScreen th={th} onClose={() => setAuthView(null)} onDemoLogin={demoLogin} onAuthed={() => setAuthView("mypage")} />}
       {authView === "mypage" && user && <MyPage th={th} user={user} onClose={() => setAuthView(null)} onLogout={logout} onUpdate={updateAccount} />}
       <MobileTabBar th={th} />
@@ -2692,6 +2693,69 @@ function WelcomeBanner({ th, onSample, onAdd, onClose }) {
 }
 
 /* Polymarket-style feedback call-to-action card shown at the bottom of the page. */
+/* ------------------------------------------------------------------ *
+ *  FOOTER (Polymarket-style link columns + legal)                     *
+ * ------------------------------------------------------------------ */
+const FOOTER_NAV = [
+  ["둘러보기", [["sec-heatmap", "히트맵"], ["sec-portfolio", "포트폴리오"], ["sec-allocation", "섹터·현금"], ["sec-goal", "목표·벤치마크"]]],
+  ["더 보기", [["sec-trend", "자산 추이"], ["sec-ideas", "투자 아이디어"], ["sec-whales", "부자들의 포트폴리오"]]],
+];
+function LegalContent({ th }) {
+  return (
+    <div style={{ fontSize: 12.5, color: th.textDim, lineHeight: 1.75 }}>
+      <div style={{ fontSize: 14, fontWeight: 600, color: th.text, margin: "4px 0 6px" }}>서비스 이용약관 (요약)</div>
+      <p style={{ margin: "0 0 14px" }}>· 본 서비스는 보유 자산을 직접 입력·관리해 한눈에 보여주는 <b style={{ color: th.text }}>개인용 포트폴리오 시각화 도구</b>입니다.<br />· 표시되는 시세·지표는 외부 데이터(야후 파이낸스 등)를 기반으로 하며, <b style={{ color: th.text }}>지연·오차가 있을 수 있습니다.</b><br />· 본 서비스는 <b style={{ color: th.text }}>투자 자문·권유가 아니며</b>, 모든 투자 판단과 책임은 이용자 본인에게 있습니다.<br />· 서비스는 사전 고지 후 변경·중단될 수 있습니다.</p>
+      <div style={{ fontSize: 14, fontWeight: 600, color: th.text, margin: "4px 0 6px" }}>개인정보 처리방침 (요약)</div>
+      <p style={{ margin: "0 0 14px" }}>· 수집 항목: 이메일·이름(계정), 그리고 이용자가 입력한 보유 종목·수량·평단가 등 <b style={{ color: th.text }}>포트폴리오 데이터</b>.<br />· 이용 목적: 로그인 인증과 기기 간 동기화 제공.<br />· 보관: 클라우드 동기화 사용 시 Supabase에 저장되며, <b style={{ color: th.text }}>본인만 접근 가능</b>하도록 행 단위 보안(RLS)이 적용됩니다. 미사용 시 데이터는 이 기기에만 저장됩니다.<br />· 삭제: 로그아웃·회원 탈퇴 또는 데이터 초기화로 언제든 삭제할 수 있습니다.<br />· 제3자에게 판매·공유하지 않습니다.</p>
+      <p style={{ margin: 0, color: th.textFaint }}>문의: {CONFIG.feedbackEmail}</p>
+    </div>
+  );
+}
+function LegalModal({ th, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 90, display: "grid", placeItems: "center", padding: 18 }}>
+      <div onClick={(e) => e.stopPropagation()} className="ph-card" style={{ width: "min(480px,100%)", maxHeight: "90vh", overflowY: "auto", background: th.panel, border: `1px solid ${th.border}`, borderRadius: 20, padding: "20px 22px 26px", boxShadow: th.cardShadow }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}><div style={{ fontSize: 18, ...DISP }}>약관 및 개인정보</div><div style={{ flex: 1 }} /><button className="ph-btn" onClick={onClose} aria-label="닫기" style={iconBtn(th)}>✕</button></div>
+        <LegalContent th={th} />
+      </div>
+    </div>
+  );
+}
+function Footer({ th, user, onFeedback, onAccount, onLegal }) {
+  const go = (id) => { const el = document.getElementById(id); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); };
+  const colTitle = { fontSize: 12, fontWeight: 700, color: th.textFaint, letterSpacing: ".4px", marginBottom: 14, textTransform: "uppercase" };
+  const link = (label, onClick, key) => <button key={key || label} className="footlink" onClick={onClick} style={{ display: "block", background: "none", border: "none", padding: 0, marginBottom: 12, color: th.textDim, fontSize: 14, fontWeight: 500, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>{label}</button>;
+  const legalBtn = (label) => <button onClick={onLegal} style={{ background: "none", border: "none", padding: 0, color: th.textFaint, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }} className="footlink">{label}</button>;
+  return (
+    <footer style={{ background: th.panel, borderTop: `1px solid ${th.border}` }}>
+      <div className="footer-inner" style={{ maxWidth: 1200, margin: "0 auto", padding: "48px 24px 28px" }}>
+        <div className="footer-grid" style={{ display: "grid", gridTemplateColumns: "1.5fr 1fr 1fr 1fr", gap: 32 }}>
+          <div className="footer-brand">
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 9, background: th.accent, display: "grid", placeItems: "center", color: th.onAccent, fontWeight: 700, fontSize: 16 }}>P</div>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>나만의 포트폴리오 히트맵</div>
+            </div>
+            <div style={{ fontSize: 13, color: th.textFaint, lineHeight: 1.65, maxWidth: 260 }}>미국·한국 주식과 코인을 한 화면에서.<br />한눈에 보는 내 자산 현황.</div>
+          </div>
+          {FOOTER_NAV.map(([title, items]) => (
+            <div key={title}><div style={colTitle}>{title}</div>{items.map(([id, label]) => link(label, () => go(id), id))}</div>
+          ))}
+          <div>
+            <div style={colTitle}>지원</div>
+            {link("의견 보내기", onFeedback)}
+            {link(user ? "마이페이지" : "로그인 / 회원가입", onAccount)}
+            {link("약관 및 개인정보", onLegal)}
+          </div>
+        </div>
+        <div style={{ borderTop: `1px solid ${th.border}`, marginTop: 36, paddingTop: 20, display: "flex", flexWrap: "wrap", gap: "8px 14px", alignItems: "center", fontSize: 12, color: th.textFaint }}>
+          <span>© {new Date().getFullYear()} 나만의 포트폴리오 히트맵</span>
+          <span style={{ opacity: .5 }}>·</span>{legalBtn("개인정보 처리방침")}<span style={{ opacity: .5 }}>·</span>{legalBtn("이용약관")}
+          <span style={{ opacity: .5 }}>·</span><span>투자 자문이 아니며 모든 책임은 이용자 본인에게 있습니다.</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
 function FeedbackCard({ onOpen }) {
   const [hover, setHover] = useState(false);
   return (
@@ -2973,15 +3037,7 @@ function MyPage({ th, user, onClose, onLogout, onUpdate }) {
           </div>
         )}
 
-        {view === "legal" && (
-          <div style={{ paddingTop: 4, fontSize: 12.5, color: th.textDim, lineHeight: 1.75 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: th.text, margin: "4px 0 6px" }}>서비스 이용약관 (요약)</div>
-            <p style={{ margin: "0 0 14px" }}>· 본 서비스는 보유 자산을 직접 입력·관리해 한눈에 보여주는 <b style={{ color: th.text }}>개인용 포트폴리오 시각화 도구</b>입니다.<br />· 표시되는 시세·지표는 외부 데이터(야후 파이낸스 등)를 기반으로 하며, <b style={{ color: th.text }}>지연·오차가 있을 수 있습니다.</b><br />· 본 서비스는 <b style={{ color: th.text }}>투자 자문·권유가 아니며</b>, 모든 투자 판단과 책임은 이용자 본인에게 있습니다.<br />· 서비스는 사전 고지 후 변경·중단될 수 있습니다.</p>
-            <div style={{ fontSize: 14, fontWeight: 600, color: th.text, margin: "4px 0 6px" }}>개인정보 처리방침 (요약)</div>
-            <p style={{ margin: "0 0 14px" }}>· 수집 항목: 이메일·이름(계정), 그리고 이용자가 입력한 보유 종목·수량·평단가 등 <b style={{ color: th.text }}>포트폴리오 데이터</b>.<br />· 이용 목적: 로그인 인증과 기기 간 동기화 제공.<br />· 보관: 클라우드 동기화 사용 시 Supabase에 저장되며, <b style={{ color: th.text }}>본인만 접근 가능</b>하도록 행 단위 보안(RLS)이 적용됩니다. 미사용 시 데이터는 이 기기에만 저장됩니다.<br />· 삭제: 로그아웃·회원 탈퇴 또는 데이터 초기화로 언제든 삭제할 수 있습니다.<br />· 제3자에게 판매·공유하지 않습니다.</p>
-            <p style={{ margin: 0, color: th.textFaint }}>문의: {CONFIG.feedbackEmail}</p>
-          </div>
-        )}
+        {view === "legal" && <div style={{ paddingTop: 4 }}><LegalContent th={th} /></div>}
 
         {toast && <div style={{ position: "fixed", left: "50%", bottom: 34, transform: "translateX(-50%)", background: th.text, color: th.bg, fontSize: 13, fontWeight: 600, padding: "10px 18px", borderRadius: 9999, zIndex: 99, boxShadow: th.cardShadow }}>{toast}</div>}
       </div>
