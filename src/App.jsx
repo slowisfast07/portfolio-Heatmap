@@ -94,14 +94,14 @@ const THEMES = {
     heroGlow: "linear-gradient(180deg, rgba(0,82,255,.14), transparent 74%)",
   },
   light: {
-    name: "light", bg: "#ffffff", panel: "#ffffff", panelAlt: "#eef0f3", border: "#dee1e6",
-    borderHover: "#0a0b0d", text: "#0a0b0d", textDim: "#5b616e", textFaint: "#7c828a",
-    accent: "#0052ff", accentActive: "#003ecc", onAccent: "#ffffff", accentGlow: "rgba(0,82,255,.28)",
+    name: "light", bg: "#f5f6f8", panel: "#ffffff", panelAlt: "#eef1f4", border: "#e4e7ec",
+    borderHover: "#c3c8d0", text: "#0a0b0d", textDim: "#5b616e", textFaint: "#8a909a",
+    accent: "#0052ff", accentActive: "#003ecc", onAccent: "#ffffff", accentGlow: "rgba(0,82,255,.22)",
     accentText: "#0052ff",
-    inputBg: "#ffffff", heatPos: "#05b169", heatNeg: "#cf202f", heatNeu: "#eef0f3",
-    rowHover: "#f7f7f7", band: "#f7f7f7",
+    inputBg: "#ffffff", heatPos: "#05b169", heatNeg: "#cf202f", heatNeu: "#e9ecf1",
+    rowHover: "#f2f4f7", band: "#eef1f5",
     posBg: "rgba(5,177,105,.12)", negBg: "rgba(207,32,47,.10)",
-    cardShadow: "0 4px 12px rgba(10,11,13,.06)",
+    cardShadow: "0 1px 2px rgba(10,11,13,.04), 0 8px 22px rgba(10,11,13,.06)",
     heroGlow: "linear-gradient(180deg, rgba(0,82,255,.08), transparent 74%)",
   },
 };
@@ -1295,7 +1295,7 @@ export default function App() {
         input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:${th.borderHover}!important;box-shadow:0 0 0 3px ${th.accentGlow};}
         .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
         .ph-primary:hover{box-shadow:0 4px 16px ${th.accentGlow};}
-        .ph-card{transition:box-shadow .2s, border-color .2s, transform .2s;}
+        .ph-card{transition:box-shadow .2s, border-color .2s, transform .2s;${themeName === "light" ? "box-shadow:0 1px 2px rgba(10,11,13,.05);" : ""}}
         .ph-card:hover{border-color:${th.borderHover};box-shadow:${th.cardShadow};}
         .ph-row{transition:background .12s;} .ph-row:hover{background:${th.rowHover};}
         .ph-tile{transition:filter .14s, box-shadow .14s;cursor:default;}
