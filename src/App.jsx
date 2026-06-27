@@ -3166,7 +3166,7 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, dayPnl, periodRet
   const Cell = ({ label, children, color, strong }) => (
     <div className="sum-cell" style={{ background: th.panel, padding: "15px 16px" }}>
       <div style={{ fontSize: 11.5, color: th.textFaint, fontWeight: 600, marginBottom: 6 }}>{label}</div>
-      <div className="num sum-val" style={{ fontSize: strong ? 26 : 22, fontWeight: 700, letterSpacing: "-0.04em", color: color || th.text }}>{children}</div>
+      <div className="num sum-val" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.04em", color: color || th.text }}>{children}</div>
     </div>
   );
   return (
