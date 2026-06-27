@@ -5,6 +5,7 @@ import {
   Plus, Trash2, RefreshCw, Sun, Moon, TrendingUp, TrendingDown, Wifi, WifiOff, Wallet, Upload, Target,
   Image as ImageIcon, FileText, LayoutGrid, PieChart as PieIcon,
   User, LogOut, Lock, Bell, ChevronRight, Mail, ShieldCheck, Link2, Cloud, GripVertical,
+  Eye, EyeOff, Compass,
 } from "lucide-react";
 import { supabase, supabaseEnabled, normUser, loadCloud, saveCloud } from "./supabase.js";
 
@@ -83,15 +84,15 @@ async function submitFeedback(payload) {
  * ------------------------------------------------------------------ */
 const THEMES = {
   dark: {
-    name: "dark", bg: "#0e0f12", panel: "#1a1c21", panelAlt: "#23262c", border: "#2b2e35",
-    borderHover: "#3c4049", text: "#ffffff", textDim: "#b0b4ba", textFaint: "#80848b",
-    accent: "#1d5bff", accentActive: "#0f44e0", onAccent: "#ffffff", accentGlow: "rgba(29,91,255,.45)",
+    name: "dark", bg: "#0e0e10", panel: "#191a1d", panelAlt: "#232427", border: "#28292d",
+    borderHover: "#3a3b40", text: "#ffffff", textDim: "#b1b2b8", textFaint: "#7d7e85",
+    accent: "#1d5bff", accentActive: "#0f44e0", onAccent: "#ffffff", accentGlow: "rgba(29,91,255,.30)",
     accentText: "#5b8cff",
-    inputBg: "#1a1c21", heatPos: "#16c784", heatNeg: "#ff5b6a", heatNeu: "#23262c",
-    rowHover: "#23262c", band: "#141519",
+    inputBg: "#191a1d", heatPos: "#16c784", heatNeg: "#ff5b6a", heatNeu: "#232427",
+    rowHover: "#232427", band: "#151517",
     posBg: "rgba(22,199,132,.16)", negBg: "rgba(255,91,106,.16)",
-    cardShadow: "0 4px 12px rgba(0,0,0,.40)",
-    heroGlow: "linear-gradient(180deg, rgba(0,82,255,.14), transparent 74%)",
+    cardShadow: "0 10px 30px rgba(0,0,0,.55)",
+    heroGlow: "none",
   },
   light: {
     name: "light", bg: "#eceff3", panel: "#ffffff", panelAlt: "#e7ebf0", border: "#dfe3e9",
@@ -1295,9 +1296,9 @@ export default function App() {
         .disp{font-weight:500;letter-spacing:-0.02em;}
         input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:${th.borderHover}!important;box-shadow:0 0 0 3px ${th.accentGlow};}
         .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
-        .ph-primary:hover{box-shadow:0 4px 16px ${th.accentGlow};}
-        .ph-card{transition:box-shadow .2s, border-color .2s, transform .2s;${themeName === "light" ? "box-shadow:0 1px 2px rgba(10,11,13,.05);" : ""}}
-        .ph-card:hover{border-color:${th.borderHover};box-shadow:${th.cardShadow};}
+        .ph-primary:hover{filter:brightness(1.06);}
+        .ph-card{transition:border-color .18s;${themeName === "light" ? "box-shadow:0 1px 2px rgba(10,11,13,.05);" : ""}}
+        .ph-card:hover{border-color:${th.borderHover};}
         .ph-row{transition:background .12s;} .ph-row:hover{background:${th.rowHover};}
         .ph-tile{transition:filter .14s, box-shadow .14s;cursor:default;}
         .ph-tile:hover{filter:brightness(1.14);box-shadow:inset 0 0 0 2px rgba(255,255,255,.6);z-index:6;}
@@ -1394,10 +1395,10 @@ export default function App() {
       {/* BODY */}
       <div className="app-body" style={{ maxWidth: "100%", margin: "0 auto", padding: "18px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
         {previewMode && (
-          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 16, border: `1px solid ${th.accent}`, background: th.panelAlt }}>
-            <span style={{ fontSize: 18 }}>👀</span>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", padding: "12px 16px", borderRadius: 14, border: `1px solid ${th.border}`, background: th.panel }}>
+            <span style={{ display: "grid", placeItems: "center", width: 30, height: 30, borderRadius: 9999, background: "rgba(29,91,255,.14)", color: th.accentText, flexShrink: 0 }}><Compass size={16} /></span>
             <div style={{ flex: 1, minWidth: 180 }}>
-              <div style={{ fontWeight: 700, fontSize: 13.5 }}>예시 데이터를 둘러보는 중이에요</div>
+              <div style={{ fontWeight: 600, fontSize: 13.5 }}>예시 데이터를 둘러보는 중이에요</div>
               <div style={{ fontSize: 12, color: th.textDim }}>샘플이라 저장되지 않아요. 돌아가면 원래 내 데이터가 그대로 있어요.</div>
             </div>
             <button className="ph-btn ph-primary" onClick={exitPreview} style={primaryBtn(th)}>← 내 데이터로 돌아가기</button>
@@ -1410,7 +1411,7 @@ export default function App() {
         <SummaryBand th={th} totalAssets={totalAssets} cost={positionsCost} value={positionsValue} ret={totalReturn} pnl={positionsValue - positionsCost} dayPnl={dayPnl} periodReturns={periodReturns} count={activeHoldings.filter((h) => h.ticker).length} displayCur={displayCur} hideAmt={hideAmt} onToggleHide={() => setHideAmt((v) => !v)} divAnnual={dividendData.totalAnnual} />
         {/* Heatmap — full width */}
         <div id="sec-heatmap" className="sec">
-        <Panel th={th} title="Heatmap" glow
+        <Panel th={th} title="Heatmap"
           titleExtra={<Segmented th={th} value={heatMode} onChange={setHeatMode} options={[["change", "현재가"], ["return", "내 수익률"]]} />}
           right={<HeatControls th={th} mode={heatMode} cap={capNow} setCap={heatMode === "return" ? setCapReturn : setCapChange} showPct={showPct} setShowPct={setShowPct} labelMode={labelMode} setLabelMode={setLabelMode} />}>
           <Treemap leaves={leaves} th={th} cap={capNow} showPct={showPct} labelMode={labelMode}
@@ -2346,7 +2347,7 @@ function TopNav({ th, onHelp }) {
         ))}
         <div style={{ flex: 1, minWidth: 8 }} />
         {onHelp && (
-          <button className="navbtn" onClick={onHelp} title="앱 소개 · 예시 데이터 불러오기" style={{ flexShrink: 0, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, fontWeight: 700, fontSize: 13, padding: "7px 13px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", margin: "5px 0" }}>✨ 둘러보기</button>
+          <button className="navbtn" onClick={onHelp} title="앱 소개 · 예시 데이터 불러오기" style={{ flexShrink: 0, display: "inline-flex", alignItems: "center", gap: 6, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.text, fontWeight: 600, fontSize: 13, padding: "7px 13px", borderRadius: 999, cursor: "pointer", whiteSpace: "nowrap", fontFamily: "inherit", margin: "5px 0" }}><Compass size={14} /> 둘러보기</button>
         )}
       </div>
     </div>
@@ -2674,18 +2675,18 @@ function WelcomeBanner({ th, onSample, onAdd, onClose }) {
   // Wise "hero-band-dark": near-black ink surface with a lime headline — the brand's
   // signature polarity-flipped hero moment.
   return (
-    <div className="hero-band" style={{ position: "relative", borderRadius: 24, padding: "52px 44px", background: "#0a0b0d", border: "0.5px solid #23262c", overflow: "hidden" }}>
-      <div style={{ position: "absolute", right: -80, top: -80, width: 320, height: 320, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,82,255,.16), transparent 70%)" }} />
-      <button className="ph-btn" onClick={onClose} style={{ display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: 9999, background: "#16181c", border: "0.5px solid #23262c", color: "#a8acb3", cursor: "pointer", position: "absolute", right: 16, top: 16 }}>✕</button>
+    <div className="hero-band" style={{ position: "relative", borderRadius: 20, padding: "52px 44px", background: th.panel, border: `1px solid ${th.border}`, overflow: "hidden" }}>
+      <div style={{ position: "absolute", right: -120, top: -120, width: 360, height: 360, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,255,255,.035), transparent 70%)", pointerEvents: "none" }} />
+      <button className="ph-btn" onClick={onClose} style={{ display: "grid", placeItems: "center", width: 38, height: 38, borderRadius: 9999, background: th.panelAlt, border: `1px solid ${th.border}`, color: th.textDim, cursor: "pointer", position: "absolute", right: 16, top: 16 }}>✕</button>
       <div style={{ position: "relative", maxWidth: 760 }}>
-        <div className="hero-title" style={{ fontSize: "clamp(34px, 5vw, 58px)", color: "#ffffff", marginBottom: 18, ...DISP_HERO }}>내 모든 자산을<br />한 화면에.</div>
-        <p style={{ fontSize: 16.5, color: "#a8acb3", lineHeight: 1.6, maxWidth: 620, margin: "0 0 28px" }}>
-          미국·한국 주식과 코인을 넣으면 <b style={{ color: "#ffffff", fontWeight: 600 }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
+        <div className="hero-title" style={{ fontSize: "clamp(34px, 5vw, 58px)", color: th.text, marginBottom: 18, ...DISP_HERO }}>내 모든 자산을<br />한 화면에.</div>
+        <p style={{ fontSize: 16.5, color: th.textDim, lineHeight: 1.6, maxWidth: 620, margin: "0 0 28px" }}>
+          미국·한국 주식과 코인을 넣으면 <b style={{ color: th.text, fontWeight: 600 }}>히트맵·섹터 비중·목표·벤치마크·RSI/볼린저</b>가 자동으로 그려져요.
           티커만 입력하면 이름·섹터·시세가 알아서 채워집니다. 처음이라면 예시로 먼저 둘러보세요.
         </p>
         <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
           <button className="ph-btn ph-primary" onClick={onSample} style={{ ...primaryBtn(th), padding: "13px 26px", fontSize: 15 }}>예시로 둘러보기</button>
-          <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: "#ffffff", border: "1px solid rgba(255,255,255,.28)", padding: "13px 24px", borderRadius: 9999, fontWeight: 600, fontSize: 15, cursor: "pointer" }}><Plus size={16} /> 내 종목 추가</button>
+          <button className="ph-btn" onClick={() => { onAdd(); onClose(); }} style={{ display: "flex", alignItems: "center", gap: 6, background: "transparent", color: th.text, border: `1px solid ${th.borderHover}`, padding: "13px 24px", borderRadius: 9999, fontWeight: 600, fontSize: 15, cursor: "pointer" }}><Plus size={16} /> 내 종목 추가</button>
         </div>
       </div>
     </div>
@@ -3244,8 +3245,8 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, dayPnl, periodRet
         <Cell label="보유 종목">{count}개</Cell>
         <Cell label="연간 배당 수익" color={divAnnual > 0 ? th.heatPos : th.textFaint}>{divAnnual > 0 ? am(divAnnual) : "—"}</Cell>
         <div className="sum-cell sum-btn" style={{ background: th.panel, display: "flex", alignItems: "center", padding: "12px 16px" }}>
-          <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ ...secondaryBtn(th), padding: "9px 14px", fontSize: 12.5 }}>
-            {hideAmt ? "👁 금액 보이기" : "🙈 금액 가리기"}
+          <button className="ph-btn" onClick={onToggleHide} title="스크린샷 공유용 — 금액 숨기기" style={{ ...secondaryBtn(th), display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 14px", fontSize: 12.5 }}>
+            {hideAmt ? <><Eye size={14} /> 금액 보이기</> : <><EyeOff size={14} /> 금액 가리기</>}
           </button>
         </div>
       </div>

@@ -1,7 +1,22 @@
 # Portfolio Heatmap — Project Notes
 
-## Design system: Coinbase (MANDATORY)
-This project follows the **Coinbase design system**, fully specified in [`DESIGN.md`](./DESIGN.md).
+## Design system: Polymarket (CURRENT — as of 2026-06-27)
+The site was retuned from Coinbase to **Polymarket** (user compared against polymarket.com/ko).
+The **live `THEMES` object in `src/App.jsx` is the source of truth** — the Coinbase notes in this
+file and `DESIGN.md` below are kept for history but are **superseded** wherever they conflict.
+
+Polymarket deltas applied (keep these):
+- **Neutral near-black** palette, NO blue tint: canvas `#0e0e10` · card `#191a1d` · elevated
+  `#232427` · hairline `#28292d` · dim `#b1b2b8` · faint `#7d7e85`. Light = gray-canvas variant.
+- **Flat surfaces — no decorative glows.** `heroGlow: "none"`; Heatmap `Panel` has no `glow` prop;
+  primary-button hover = brightness only; card hover = border-color only.
+- Blue accent **#1d5bff** (active `#0f44e0`), still used scarcely. Heat green `#16c784` / red `#ff5b6a`.
+- **No emoji in UI** — use lucide icons (Compass for 둘러보기, Eye/EyeOff for 금액 가리기, etc.).
+- Bottom of page is a **multi-column Polymarket footer** (brand + 둘러보기/더 보기/지원 + legal row),
+  not a centered feedback card; it opens the existing FeedbackModal / LegalModal.
+
+## Design system: Coinbase (historical — see Polymarket section above)
+This project followed the **Coinbase design system**, fully specified in [`DESIGN.md`](./DESIGN.md).
 Every existing and **future** page/component must use these tokens — never reintroduce the
 old Wise lime (#9fe870), TradingView blue, or Binance yellow.
 
