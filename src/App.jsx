@@ -87,9 +87,9 @@ const THEMES = {
     borderHover: "#33373d", text: "#ffffff", textDim: "#a8acb3", textFaint: "#7c828a",
     accent: "#0052ff", accentActive: "#003ecc", onAccent: "#ffffff", accentGlow: "rgba(0,82,255,.45)",
     accentText: "#4d8bff",
-    inputBg: "#16181c", heatPos: "#05b169", heatNeg: "#cf202f", heatNeu: "#1f2227",
+    inputBg: "#16181c", heatPos: "#16c784", heatNeg: "#ff5b6a", heatNeu: "#1f2227",
     rowHover: "#1f2227", band: "#101216",
-    posBg: "rgba(5,177,105,.16)", negBg: "rgba(207,32,47,.16)",
+    posBg: "rgba(22,199,132,.16)", negBg: "rgba(255,91,106,.16)",
     cardShadow: "0 4px 12px rgba(0,0,0,.40)",
     heroGlow: "linear-gradient(180deg, rgba(0,82,255,.14), transparent 74%)",
   },
@@ -1290,7 +1290,7 @@ export default function App() {
   return (
     <div style={{ background: th.bg, color: th.text, minHeight: "100vh", overflowX: "clip", transition: "background .25s", fontFamily: 'Inter, system-ui, -apple-system, "Apple SD Gothic Neo", "Helvetica Neue", Arial, sans-serif' }}>
       <style>{`
-        .num{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,monospace;font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:500;letter-spacing:0;}
+        .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";font-weight:500;letter-spacing:0;}
         .disp{font-weight:500;letter-spacing:-0.02em;}
         input,select,textarea{outline:none;font-family:inherit;} input:focus,select:focus,textarea:focus{border-color:${th.borderHover}!important;box-shadow:0 0 0 3px ${th.accentGlow};}
         .ph-btn{transition:all .15s;cursor:pointer;} .ph-btn:hover{filter:brightness(1.1);}
@@ -1319,7 +1319,8 @@ export default function App() {
           .app-brand .brand-name{display:none !important;}
           .app-headline{order:9 !important;width:100% !important;text-align:left !important;margin-right:0 !important;}
           .app-headline .app-delta{justify-content:flex-start !important;}
-          .app-headline .app-total{font-size:26px !important;}
+          .app-headline .app-total{font-size:30px !important;}
+          .sum-val{font-size:21px !important;}
           .app-status{flex-wrap:wrap !important;padding:7px 14px !important;gap:3px 9px !important;}
           .app-status .hide-sm{display:none !important;}
           .app-body{padding:14px 13px !important;gap:13px !important;}
@@ -1339,7 +1340,7 @@ export default function App() {
         </div>
         <div style={{ flex: 1 }} />
         <div className="app-headline" style={{ textAlign: "right", marginRight: 6 }}>
-          <div className="num app-total" style={{ fontSize: 23, ...DISP }}><AnimatedMoney value={totalAssets} displayCur={displayCur} hidden={hideAmt} /></div>
+          <div className="num app-total" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.04em" }}><AnimatedMoney value={totalAssets} displayCur={displayCur} hidden={hideAmt} /></div>
           <div className="app-delta" style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 3 }}>
             <DeltaPill th={th} label="오늘" v={dayChange} />
             <DeltaPill th={th} label="수익" v={totalReturn} />
@@ -3165,7 +3166,7 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, dayPnl, periodRet
   const Cell = ({ label, children, color, strong }) => (
     <div className="sum-cell" style={{ background: th.panel, padding: "15px 16px" }}>
       <div style={{ fontSize: 11.5, color: th.textFaint, fontWeight: 600, marginBottom: 6 }}>{label}</div>
-      <div className="num" style={{ fontSize: strong ? 21 : 19, ...DISP, color: color || th.text }}>{children}</div>
+      <div className="num sum-val" style={{ fontSize: strong ? 26 : 22, fontWeight: 700, letterSpacing: "-0.04em", color: color || th.text }}>{children}</div>
     </div>
   );
   return (
@@ -3181,7 +3182,7 @@ function SummaryBand({ th, totalAssets, cost, value, ret, pnl, dayPnl, periodRet
               {PERIODS.map(([k, lbl]) => <option key={k} value={k}>{lbl}</option>)}
             </select>
           </div>
-          <div className="num" style={{ fontSize: 21, ...DISP, color: rv == null ? th.textFaint : rv >= 0 ? th.heatPos : th.heatNeg }}>{rv == null ? "—" : `${rv >= 0 ? "+" : ""}${fmt(rv)}%`}</div>
+          <div className="num sum-val" style={{ fontSize: 26, fontWeight: 700, letterSpacing: "-0.04em", color: rv == null ? th.textFaint : rv >= 0 ? th.heatPos : th.heatNeg }}>{rv == null ? "—" : `${rv >= 0 ? "+" : ""}${fmt(rv)}%`}</div>
           {rv == null && period !== "all" && period !== "1d" && <div style={{ fontSize: 10, color: th.textFaint, marginTop: 3 }}>데이터 쌓이는 중</div>}
         </div>
         <Cell label="보유 종목">{count}개</Cell>
